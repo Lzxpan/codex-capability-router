@@ -1,0 +1,74 @@
+[
+  {
+    "id": "zh-firmware-debugging",
+    "language": "zh-TW",
+    "task": "請協助除錯 MCU 韌體的 UART 錯誤。",
+    "category": "firmware debugging"
+  },
+  {
+    "id": "zh-react-ui-bug",
+    "language": "zh-TW",
+    "task": "請修正 React 元件的介面錯誤。",
+    "category": "react ui bug"
+  },
+  {
+    "id": "zh-pr-code-review",
+    "language": "zh-TW",
+    "task": "請審查這個 Pull Request 的程式碼 diff。",
+    "category": "pr code review"
+  },
+  {
+    "id": "zh-research-document-search",
+    "language": "zh-TW",
+    "task": "請搜尋研究文件與論文資料。",
+    "category": "research document search"
+  },
+  {
+    "id": "zh-spreadsheet-data-analysis",
+    "language": "zh-TW",
+    "task": "請分析試算表中的資料與表格。",
+    "category": "spreadsheet data analysis"
+  },
+  {
+    "id": "zh-ui-ux-design",
+    "language": "zh-TW",
+    "task": "請設計一個使用者體驗與介面原型。",
+    "category": "ui ux design"
+  },
+  {
+    "id": "en-firmware-debugging",
+    "language": "en",
+    "task": "Debug the MCU firmware UART error.",
+    "category": "firmware debugging"
+  },
+  {
+    "id": "en-react-ui-bug",
+    "language": "en",
+    "task": "Fix the React component UI bug.",
+    "category": "react ui bug"
+  },
+  {
+    "id": "en-pr-code-review",
+    "language": "en",
+    "task": "Review the pull request code diff.",
+    "category": "pr code review"
+  },
+  {
+    "id": "en-research-document-search",
+    "language": "en",
+    "task": "Search the research documents and papers.",
+    "category": "research document search"
+  },
+  {
+    "id": "en-spreadsheet-data-analysis",
+    "language": "en",
+    "task": "Analyze the spreadsheet data table.",
+    "category": "spreadsheet data analysis"
+  },
+  {
+    "id": "en-ui-ux-design",
+    "language": "en",
+    "task": "Design a UI and UX prototype.",
+    "category": "ui ux design"
+  }
+]

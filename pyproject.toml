@@ -1,0 +1,10 @@
+[project]
+name = "codex-capability-router"
+# 修改紀錄（2026-08-17，Steve Peng）：將 package release metadata 與 beta tag 統一。
+# 原始內容：version = "0.1.0"。
+# 修改原因：本次公開發布目標是 v0.1.0-beta.1，不應讓 package metadata 誤稱 stable。
+# 修改後功能：pyproject 與 GitHub beta release 使用同一個 beta.1 版本識別。
+version = "0.1.0-beta.1"
+description = "A read-only foundation for context-aware Codex capability recommendations."
+requires-python = ">=3.11"
+dependencies = []

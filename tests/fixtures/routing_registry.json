@@ -1,0 +1,227 @@
+[
+  {
+    "id": "codex-capability-router",
+    "name": "Codex Capability Router",
+    "kind": "skill",
+    "status": "installed",
+    "categories": ["router", "capability routing"],
+    "triggers": [
+      "firmware", "韌體", "react", "ui", "介面", "pull request", "pr",
+      "code review", "研究", "research", "document", "文件", "spreadsheet",
+      "試算表", "data analysis", "design", "設計"
+    ],
+    "priority": 100,
+    "overlap_group": null,
+    "preferred_for": [],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "firmware-debugging",
+    "name": "Firmware Debugging",
+    "kind": "skill",
+    "status": "installed",
+    "categories": ["firmware debugging", "firmware", "debugging"],
+    "triggers": [
+      "firmware", "韌體", "microcontroller", "mcu", "embedded", "嵌入式",
+      "uart", "serial", "debug", "除錯", "故障"
+    ],
+    "priority": 10,
+    "overlap_group": "debugging-tool",
+    "preferred_for": ["firmware debugging"],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "generic-debugger",
+    "name": "Generic Debugger",
+    "kind": "tool",
+    "status": "installed",
+    "categories": ["generic", "debugging"],
+    "triggers": ["debug", "bug", "錯誤", "問題"],
+    "priority": 1,
+    "overlap_group": "debugging-tool",
+    "preferred_for": [],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "offline-firmware-debugger",
+    "name": "Offline Firmware Debugger",
+    "kind": "tool",
+    "status": "unavailable",
+    "categories": ["firmware debugging", "firmware"],
+    "triggers": ["firmware", "韌體", "uart", "debug", "除錯"],
+    "priority": 50,
+    "overlap_group": "debugging-tool",
+    "preferred_for": ["firmware debugging"],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "react-ui-debugging",
+    "name": "React UI Debugging",
+    "kind": "skill",
+    "status": "installed",
+    "categories": ["react ui bug", "react", "ui"],
+    "triggers": [
+      "react", "component", "frontend", "ui", "bug", "css", "元件", "介面", "錯誤"
+    ],
+    "priority": 10,
+    "overlap_group": "ui-debugging",
+    "preferred_for": ["react ui bug"],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "generic-ui-debugger",
+    "name": "Generic UI Debugger",
+    "kind": "tool",
+    "status": "installed",
+    "categories": ["generic", "ui"],
+    "triggers": ["ui", "bug", "錯誤", "問題"],
+    "priority": 1,
+    "overlap_group": "ui-debugging",
+    "preferred_for": [],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "pr-code-review",
+    "name": "PR Code Review",
+    "kind": "skill",
+    "status": "installed",
+    "categories": ["pr code review", "code review", "review"],
+    "triggers": [
+      "pull request", "pr", "code review", "review", "diff", "拉取請求", "程式碼審查"
+    ],
+    "priority": 10,
+    "overlap_group": "code-review",
+    "preferred_for": ["pr code review"],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "generic-code-review",
+    "name": "Generic Code Review",
+    "kind": "tool",
+    "status": "installed",
+    "categories": ["generic", "code review"],
+    "triggers": ["review", "code", "程式碼", "審查"],
+    "priority": 1,
+    "overlap_group": "code-review",
+    "preferred_for": [],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "research-document-search",
+    "name": "Research Document Search",
+    "kind": "skill",
+    "status": "available",
+    "categories": ["research document search", "research", "document search"],
+    "triggers": [
+      "research", "document", "search", "paper", "研究", "文件", "搜尋", "查資料"
+    ],
+    "priority": 10,
+    "overlap_group": "research-search",
+    "preferred_for": ["research document search"],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "generic-search",
+    "name": "Generic Search",
+    "kind": "tool",
+    "status": "available",
+    "categories": ["generic", "search"],
+    "triggers": ["search", "搜尋", "查詢"],
+    "priority": 1,
+    "overlap_group": "research-search",
+    "preferred_for": [],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "spreadsheet-data-analysis",
+    "name": "Spreadsheet Data Analysis",
+    "kind": "skill",
+    "status": "installed",
+    "categories": ["spreadsheet data analysis", "spreadsheet", "data analysis"],
+    "triggers": [
+      "spreadsheet", "csv", "data analysis", "excel", "table", "試算表", "資料分析", "表格"
+    ],
+    "priority": 10,
+    "overlap_group": "data-analysis",
+    "preferred_for": ["spreadsheet data analysis"],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "generic-data-analysis",
+    "name": "Generic Data Analysis",
+    "kind": "tool",
+    "status": "installed",
+    "categories": ["generic", "data analysis"],
+    "triggers": ["data", "analysis", "資料", "分析"],
+    "priority": 1,
+    "overlap_group": "data-analysis",
+    "preferred_for": [],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "figma",
+    "name": "Figma",
+    "kind": "tool",
+    "status": "installed",
+    "categories": ["ui ux design", "ui", "ux", "design"],
+    "triggers": ["ui", "ux", "design", "prototype", "介面", "使用者體驗", "設計", "原型"],
+    "priority": 10,
+    "overlap_group": "ui-ux-design",
+    "preferred_for": ["ui ux design"],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "ux-pilot",
+    "name": "UX Pilot",
+    "kind": "tool",
+    "status": "available",
+    "categories": ["ui ux design", "ux", "design"],
+    "triggers": ["ui", "ux", "design", "prototype", "介面", "設計", "原型"],
+    "priority": 8,
+    "overlap_group": "ui-ux-design",
+    "preferred_for": [],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  },
+  {
+    "id": "visily",
+    "name": "Visily",
+    "kind": "tool",
+    "status": "available",
+    "categories": ["ui ux design", "ui", "design"],
+    "triggers": ["ui", "design", "prototype", "介面", "設計", "原型"],
+    "priority": 7,
+    "overlap_group": "ui-ux-design",
+    "preferred_for": [],
+    "requires": [],
+    "source": "fixture:routing-registry",
+    "last_verified": null
+  }
+]

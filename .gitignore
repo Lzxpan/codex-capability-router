@@ -1,0 +1,25 @@
+# Python cache and test output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local environments
+.venv/
+venv/
+env/
+
+# Local evaluation state; not required to use the skill
+.plugin-eval/
+
+# Backups and temporary files
+*.backup*
+backup/
+backups/
+tmp/
+temp/
+
+# Private editor and OS state
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

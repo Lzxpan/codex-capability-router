@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Capability Router Canonical Capability Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "kind",
+    "status",
+    "categories",
+    "triggers",
+    "priority",
+    "overlap_group",
+    "preferred_for",
+    "requires",
+    "source",
+    "last_verified"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["skill", "plugin", "tool", "app", "mcp", "unknown"] },
+    "status": { "enum": ["installed", "available", "unavailable", "unknown"] },
+    "categories": { "type": "array", "items": { "type": "string" } },
+    "triggers": { "type": "array", "items": { "type": "string" } },
+    "priority": { "type": "integer" },
+    "overlap_group": { "type": ["string", "null"] },
+    "preferred_for": { "type": "array", "items": { "type": "string" } },
+    "requires": { "type": "array", "items": { "type": "string" } },
+    "source": { "type": "string", "minLength": 1 },
+    "last_verified": { "type": ["string", "null"] },
+    "version": { "type": ["string", "null"] },
+    "limitations": { "type": "array", "items": { "type": "string" } },
+    "provenance": { "type": "array", "items": { "type": "string" } },
+    "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+    "conflicts": { "type": "array", "items": { "type": "string" } },
+    "evidence": { "type": "array", "items": { "type": "string" } },
+    "recommendation_only": { "type": "boolean" }
+  }
+}
