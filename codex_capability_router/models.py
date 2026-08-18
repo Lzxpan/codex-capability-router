@@ -11,6 +11,10 @@ from enum import Enum
 # 原始內容：Phase 1 只有版本 metadata，沒有 capability record。
 # 修改原因：建立 Phase 2 所需的固定欄位與可預測輸出邊界。
 # 修改後功能：提供 immutable enum、record、diagnostic 與 deterministic registry result。
+# 修改紀錄（2026-08-18，Steve Peng）
+# 原始內容：RecommendationResult 沒有 selected capability 的結構化路由證據，record 也沒有雙語 Function metadata。
+# 修改原因：Phase 5D 需要可稽核的 selected explanation，且不允許 renderer 以 category 猜測功能。
+# 修改後功能：新增 optional function metadata 與 SelectionEvidence；既有 record 欄位與 route result positional 順序保持相容。
 
 
 class CapabilityKind(str, Enum):
@@ -31,6 +35,17 @@ class CapabilityStatus(str, Enum):
     AVAILABLE = "available"
     UNAVAILABLE = "unavailable"
     UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True)
+class SelectionEvidence:
+    """單一 capability 的 deterministic selection evidence，不包含隱藏推理。"""
+
+    capability_id: str
+    selection_level: str
+    reason_codes: tuple[str, ...] = ()
+    matched_triggers: tuple[str, ...] = ()
+    matched_requirements: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -83,6 +98,7 @@ class RecommendationResult:
     rejected_candidates: tuple[RejectedCandidate, ...]
     rationale: str
     recommendation_only: tuple["CapabilityRecord", ...] = ()
+    selection_evidence: tuple[SelectionEvidence, ...] = ()
 
     def __post_init__(self) -> None:
         """在資料邊界再次保護 hard selection limits，避免呼叫端傳出超額結果。"""
@@ -121,6 +137,8 @@ class CapabilityRecord:
     conflicts: tuple[str, ...] = ()
     evidence: tuple[str, ...] = ()
     recommendation_only: bool = False
+    function_en: str | None = None
+    function_zh_tw: str | None = None
 
     def __post_init__(self) -> None:
         """在 model boundary 驗證 confidence 與 recommendation-only 型別。"""
@@ -133,7 +151,7 @@ class CapabilityRecord:
     def to_mapping(self) -> dict[str, object]:
         """將 record 轉成完整 canonical mapping，供 JSON registry 輸出。"""
 
-        return {
+        payload: dict[str, object] = {
             "id": self.id,
             "name": self.name,
             "kind": self.kind.value,
@@ -154,6 +172,14 @@ class CapabilityRecord:
             "evidence": list(self.evidence),
             "recommendation_only": self.recommendation_only,
         }
+        if self.function_en is not None or self.function_zh_tw is not None:
+            payload["function"] = {"en": self.function_en, "zh-TW": self.function_zh_tw}
+        return payload
+
+    def function_for(self, locale: str) -> str | None:
+        """依 requested locale 讀取 canonical Function metadata；缺少時回傳 None。"""
+
+        return self.function_zh_tw if locale == "zh-TW" else self.function_en
 
 
 @dataclass(frozen=True)

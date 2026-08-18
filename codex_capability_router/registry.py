@@ -12,6 +12,10 @@ from .models import CapabilityRecord, DiscoveryDiagnostic, DiscoveryResult
 # 原始內容：registry 只有同 source 去重，跨 source claim 會直接並列且無 authority/provenance model。
 # 修改原因：Phase 5R 要求 runtime > verified CLI > manual 的明確 precedence，並保留衝突證據；beta review 另指出同 source 去重不得遺失 evidence。
 # 修改後功能：提供 bounded merge，runtime record 勝出、CLI 次之、manual 最後；保留 field-level conflict、provenance 與 evidence，不執行外部能力。
+# 修改紀錄（2026-08-18，Steve Peng）
+# 原始內容：merge conflict 比對未涵蓋雙語 Function metadata。
+# 修改原因：Phase 5D explanation 使用 canonical Function，來源衝突不能被靜默覆蓋。
+# 修改後功能：保留 function.en/function.zh-TW 的 field-level conflict evidence。
 
 
 def classify_capability(record: CapabilityRecord) -> CapabilityRecord:
@@ -115,6 +119,8 @@ def _claim_conflicts(records: Sequence[CapabilityRecord]) -> tuple[str, ...]:
         ("limitations", lambda record: record.limitations),
         ("confidence", lambda record: record.confidence),
         ("recommendation_only", lambda record: record.recommendation_only),
+        ("function_en", lambda record: record.function_en),
+        ("function_zh_tw", lambda record: record.function_zh_tw),
     )
     conflicts: list[str] = []
     for field, value_of in fields:

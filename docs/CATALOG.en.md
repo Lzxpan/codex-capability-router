@@ -9,7 +9,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: skill
 - Status: installed
 - Category: capability routing, router
-- Primary Purpose: Supports capability routing, router recommendations.
+- Primary Purpose: Function information unavailable.
 - Use When: Task mentions: firmware, 韌體, react, ui, 介面, pull request, pr, code review, 研究, research, document, 文件, spreadsheet, 試算表, data analysis, design, 設計.
 - Avoid When: when the task does not match its category or triggers.
 - Overlap Group: null
@@ -22,7 +22,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: tool
 - Status: installed
 - Category: design, ui, ui ux design, ux
-- Primary Purpose: Supports design, ui, ui ux design, ux recommendations.
+- Primary Purpose: Supports UI/UX design and prototype work.
 - Use When: Task mentions: ui, ux, design, prototype, 介面, 使用者體驗, 設計, 原型.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: ui-ux-design
@@ -35,7 +35,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: skill
 - Status: installed
 - Category: debugging, firmware, firmware debugging
-- Primary Purpose: Supports debugging, firmware, firmware debugging recommendations.
+- Primary Purpose: Analyzes and fixes embedded firmware failures.
 - Use When: Task mentions: firmware, 韌體, microcontroller, mcu, embedded, 嵌入式, uart, serial, debug, 除錯, 故障.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: debugging-tool
@@ -48,7 +48,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: tool
 - Status: installed
 - Category: code review, generic
-- Primary Purpose: Supports code review, generic recommendations.
+- Primary Purpose: Function information unavailable.
 - Use When: Task mentions: review, code, 程式碼, 審查.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: code-review
@@ -61,7 +61,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: tool
 - Status: installed
 - Category: data analysis, generic
-- Primary Purpose: Supports data analysis, generic recommendations.
+- Primary Purpose: Function information unavailable.
 - Use When: Task mentions: data, analysis, 資料, 分析.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: data-analysis
@@ -74,7 +74,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: tool
 - Status: installed
 - Category: debugging, generic
-- Primary Purpose: Supports debugging, generic recommendations.
+- Primary Purpose: Function information unavailable.
 - Use When: Task mentions: debug, bug, 錯誤, 問題.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: debugging-tool
@@ -87,7 +87,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: tool
 - Status: available
 - Category: generic, search
-- Primary Purpose: Supports generic, search recommendations.
+- Primary Purpose: Function information unavailable.
 - Use When: Task mentions: search, 搜尋, 查詢.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: research-search
@@ -100,7 +100,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: tool
 - Status: installed
 - Category: generic, ui
-- Primary Purpose: Supports generic, ui recommendations.
+- Primary Purpose: Function information unavailable.
 - Use When: Task mentions: ui, bug, 錯誤, 問題.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: ui-debugging
@@ -113,7 +113,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: tool
 - Status: unavailable
 - Category: firmware, firmware debugging
-- Primary Purpose: Supports firmware, firmware debugging recommendations.
+- Primary Purpose: Function information unavailable.
 - Use When: Task mentions: firmware, 韌體, uart, debug, 除錯.
 - Avoid When: when status is unavailable.
 - Overlap Group: debugging-tool
@@ -126,7 +126,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: skill
 - Status: installed
 - Category: code review, pr code review, review
-- Primary Purpose: Supports code review, pr code review, review recommendations.
+- Primary Purpose: Reviews pull request changes and diff evidence.
 - Use When: Task mentions: pull request, pr, code review, review, diff, 拉取請求, 程式碼審查.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: code-review
@@ -139,7 +139,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: skill
 - Status: installed
 - Category: react, react ui bug, ui
-- Primary Purpose: Supports react, react ui bug, ui recommendations.
+- Primary Purpose: Diagnoses React UI regressions.
 - Use When: Task mentions: react, component, frontend, ui, bug, css, 元件, 介面, 錯誤.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: ui-debugging
@@ -152,7 +152,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: skill
 - Status: available
 - Category: document search, research, research document search
-- Primary Purpose: Supports document search, research, research document search recommendations.
+- Primary Purpose: Searches research documents and papers.
 - Use When: Task mentions: research, document, search, paper, 研究, 文件, 搜尋, 查資料.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: research-search
@@ -165,7 +165,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: skill
 - Status: installed
 - Category: data analysis, spreadsheet, spreadsheet data analysis
-- Primary Purpose: Supports data analysis, spreadsheet, spreadsheet data analysis recommendations.
+- Primary Purpose: Analyzes spreadsheet data and tables.
 - Use When: Task mentions: spreadsheet, csv, data analysis, excel, table, 試算表, 資料分析, 表格.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: data-analysis
@@ -178,7 +178,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: tool
 - Status: available
 - Category: design, ui ux design, ux
-- Primary Purpose: Supports design, ui ux design, ux recommendations.
+- Primary Purpose: Function information unavailable.
 - Use When: Task mentions: ui, ux, design, prototype, 介面, 設計, 原型.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: ui-ux-design
@@ -191,7 +191,7 @@ Generated from one canonical registry. Capability IDs and enum values are unchan
 - Kind: tool
 - Status: available
 - Category: design, ui, ui ux design
-- Primary Purpose: Supports design, ui, ui ux design recommendations.
+- Primary Purpose: Function information unavailable.
 - Use When: Task mentions: ui, design, prototype, 介面, 設計, 原型.
 - Avoid When: when another capability in the same overlap group is a better fit.
 - Overlap Group: ui-ux-design

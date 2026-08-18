@@ -32,7 +32,11 @@
     "preferred_for": ["firmware debugging"],
     "requires": [],
     "source": "fixture:routing-registry",
-    "last_verified": null
+    "last_verified": null,
+    "function": {
+      "en": "Analyzes and fixes embedded firmware failures.",
+      "zh-TW": "分析並修正嵌入式韌體問題。"
+    }
   },
   {
     "id": "generic-debugger",
@@ -76,7 +80,11 @@
     "preferred_for": ["react ui bug"],
     "requires": [],
     "source": "fixture:routing-registry",
-    "last_verified": null
+    "last_verified": null,
+    "function": {
+      "en": "Diagnoses React UI regressions.",
+      "zh-TW": "診斷 React 介面回歸問題。"
+    }
   },
   {
     "id": "generic-ui-debugger",
@@ -106,7 +114,11 @@
     "preferred_for": ["pr code review"],
     "requires": [],
     "source": "fixture:routing-registry",
-    "last_verified": null
+    "last_verified": null,
+    "function": {
+      "en": "Reviews pull request changes and diff evidence.",
+      "zh-TW": "審查 Pull Request 變更與 diff 證據。"
+    }
   },
   {
     "id": "generic-code-review",
@@ -136,7 +148,11 @@
     "preferred_for": ["research document search"],
     "requires": [],
     "source": "fixture:routing-registry",
-    "last_verified": null
+    "last_verified": null,
+    "function": {
+      "en": "Searches research documents and papers.",
+      "zh-TW": "搜尋研究文件與論文。"
+    }
   },
   {
     "id": "generic-search",
@@ -166,7 +182,11 @@
     "preferred_for": ["spreadsheet data analysis"],
     "requires": [],
     "source": "fixture:routing-registry",
-    "last_verified": null
+    "last_verified": null,
+    "function": {
+      "en": "Analyzes spreadsheet data and tables.",
+      "zh-TW": "分析試算表資料與表格。"
+    }
   },
   {
     "id": "generic-data-analysis",
@@ -194,7 +214,11 @@
     "preferred_for": ["ui ux design"],
     "requires": [],
     "source": "fixture:routing-registry",
-    "last_verified": null
+    "last_verified": null,
+    "function": {
+      "en": "Supports UI/UX design and prototype work.",
+      "zh-TW": "支援 UI/UX 設計與原型工作。"
+    }
   },
   {
     "id": "ux-pilot",

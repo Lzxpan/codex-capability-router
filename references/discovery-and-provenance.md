@@ -13,7 +13,9 @@
 
 ## 公開欄位
 
-`id`、`name`、`kind`、`status`、`categories`、`triggers`、`priority`、`overlap_group`、`preferred_for`、`requires`、`source`、`last_verified` 是 canonical 欄位。可選的 `provenance`、`confidence`、`conflicts`、`evidence`、`recommendation_only` 用來保留本次 runtime merge 的可追溯資訊。
+`id`、`name`、`kind`、`status`、`categories`、`triggers`、`priority`、`overlap_group`、`preferred_for`、`requires`、`source`、`last_verified` 是 canonical 欄位。可選的 `function` object（`en`、`zh-TW`）提供 user-facing 功能說明；可選的 `provenance`、`confidence`、`conflicts`、`evidence`、`recommendation_only` 用來保留本次 runtime merge 的可追溯資訊。
+
+缺少 requested locale 的 Function metadata 時，renderer 必須輸出明確 unavailable fallback，不得從 category、trigger 或名稱推測功能。
 
 缺少可靠 status 時使用 `unknown`；不得從名稱、目錄或命令輸出推測 `installed`。`confidence` 僅接受 `0.0..1.0`。
 

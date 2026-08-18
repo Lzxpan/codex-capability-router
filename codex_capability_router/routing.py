@@ -11,6 +11,7 @@ from .models import (
     RecommendationResult,
     RejectedCandidate,
     RouterInput,
+    SelectionEvidence,
 )
 from .registry import merge_capability_records
 
@@ -19,6 +20,10 @@ from .registry import merge_capability_records
 # 原始內容：unknown record 會沿用 available/optional 分支，可能被正常推薦；rejected candidate 只保留 id/reason/status。
 # 修改原因：Phase 5R 要求 unknown 排除 selected/recommendation，且 beta review 要求 rejected output 可追溯來源與衝突。
 # 修改後功能：unknown 僅能進 recommendation_only advisory output；每個 rejected candidate 保留 source、provenance、confidence、conflicts。
+# 修改紀錄（2026-08-18，Steve Peng）
+# 原始內容：route result 只有 selected records，沒有可供 explanation renderer 使用的結構化 selection evidence。
+# 修改原因：Phase 5D 需要 deterministic、auditable reason codes，且不得產生 hidden reasoning trace。
+# 修改後功能：依既有 task/category/trigger/ranking evidence 產生 selection_evidence；不改變候選排序或 selection limits。
 
 _TASK_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -66,6 +71,10 @@ _BROAD_TERMS = {
     "搜尋",
     "介面",
 }
+
+_PRIMARY_LEVEL = "PRIMARY"
+_OPTIONAL_LEVEL = "OPTIONAL"
+_RECOMMENDATION_ONLY_LEVEL = "RECOMMENDATION_ONLY"
 
 
 def classify_task(user_task: str) -> tuple[str, ...]:
@@ -136,8 +145,19 @@ def route(request: RouterInput) -> RecommendationResult:
 
     rejected.sort(key=lambda item: (item.id.casefold(), item.id, item.reason))
     recommendation_only.sort(key=lambda record: _ranking_key(record, task, task_categories))
-    rationale = _rationale(request, task_categories, primary, optional, tuple(recommendation_only))
-    return RecommendationResult(primary, optional, tuple(rejected), rationale, tuple(recommendation_only))
+    recommendation_records = tuple(recommendation_only)
+    selection_evidence = tuple(
+        _selection_evidence(record, _PRIMARY_LEVEL, task, task_categories)
+        for record in primary
+    ) + tuple(
+        _selection_evidence(record, _OPTIONAL_LEVEL, task, task_categories)
+        for record in optional
+    ) + tuple(
+        _selection_evidence(record, _RECOMMENDATION_ONLY_LEVEL, task, task_categories)
+        for record in recommendation_records
+    )
+    rationale = _rationale(request, task_categories, primary, optional, recommendation_records)
+    return RecommendationResult(primary, optional, tuple(rejected), rationale, recommendation_records, selection_evidence)
 
 
 def _rejected(record: CapabilityRecord, reason: str) -> RejectedCandidate:
@@ -208,6 +228,63 @@ def _is_generic(record: CapabilityRecord) -> bool:
 
     values = (record.id, record.name, *record.categories)
     return any("generic" in _normalize(value) or "general" in _normalize(value) for value in values)
+
+
+def _selection_evidence(
+    record: CapabilityRecord,
+    selection_level: str,
+    task: str,
+    task_categories: tuple[str, ...],
+) -> SelectionEvidence:
+    """由既有 match evidence 建立 bounded reason codes，不建立 scoring 或 reasoning trace。"""
+
+    matched_triggers = tuple(
+        trigger for trigger in record.triggers if _phrase_in_text(task, trigger)
+    )
+    matched_requirements = _unique_text(
+        value
+        for value in (*record.preferred_for, *record.categories)
+        if _normalize(value) in task_categories
+    )
+    reason_codes: list[str] = []
+    if _phrase_in_text(task, record.id) or _phrase_in_text(task, record.name):
+        reason_codes.append("explicit_request")
+    if matched_triggers:
+        reason_codes.append("exact_trigger_match")
+    if not _is_generic(record):
+        reason_codes.append("specialist_match")
+    if matched_requirements:
+        reason_codes.append("requirement_coverage")
+    if record.status in {CapabilityStatus.INSTALLED, CapabilityStatus.AVAILABLE}:
+        reason_codes.append("installed_available")
+    if record.source.casefold().startswith(("skill-root", "explicit-skill-root")):
+        reason_codes.append("workspace_specific")
+    if record.overlap_group and matched_requirements:
+        reason_codes.append("preferred_overlap_member")
+    if selection_level == _OPTIONAL_LEVEL:
+        reason_codes.append("complementary_optional")
+    if not reason_codes:
+        reason_codes.append("fallback")
+    return SelectionEvidence(
+        capability_id=record.id,
+        selection_level=selection_level,
+        reason_codes=tuple(reason_codes),
+        matched_triggers=matched_triggers,
+        matched_requirements=matched_requirements,
+    )
+
+
+def _unique_text(values) -> tuple[str, ...]:
+    """依第一次出現順序去重 matched evidence，保持 machine result deterministic。"""
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return tuple(result)
 
 
 def _rationale(

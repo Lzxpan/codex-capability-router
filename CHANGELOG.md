@@ -17,6 +17,9 @@ Initial public beta release.
   protection against routing `UNKNOWN` capabilities as normally available.
 - Deterministic advisory routing with English (`en`) and Traditional Chinese
   (`zh-TW`) catalogs.
+- Human-readable selected capability explanations with localized Function
+  metadata, PRIMARY/OPTIONAL levels, deterministic reason codes, and separate
+  recommendation-only output.
 - Bounded validation with exactly 12 routing scenarios: 6 `zh-TW` and 6 `en`.
 - Privacy and public-safety protections for secrets, credentials, private
   inventory, unnecessary absolute paths, and unrequested filesystem scanning.
@@ -28,6 +31,9 @@ estimated-static deferred context cost, not measured runtime token consumption;
 repository documentation, tests, fixtures, and implementation artifacts are
 included in that static estimate. Empirical runtime token measurement remains
 required before stable `v0.1.0`.
+
+Phase 5D adds presentation/explainability only; existing routing selection and
+the 12-scenario fixture remain unchanged.
 
 ## [0.1.0-dev] - 2026-08-17
 

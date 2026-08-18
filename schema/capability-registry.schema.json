@@ -36,6 +36,25 @@
     "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
     "conflicts": { "type": "array", "items": { "type": "string" } },
     "evidence": { "type": "array", "items": { "type": "string" } },
-    "recommendation_only": { "type": "boolean" }
+    "recommendation_only": { "type": "boolean" },
+    "function": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "anyOf": [
+        {
+          "required": ["en"],
+          "properties": { "en": { "type": "string", "minLength": 1 } }
+        },
+        {
+          "required": ["zh-TW"],
+          "properties": { "zh-TW": { "type": "string", "minLength": 1 } }
+        }
+      ],
+      "properties": {
+        "en": { "type": ["string", "null"], "minLength": 1 },
+        "zh-TW": { "type": ["string", "null"], "minLength": 1 }
+      }
+    }
   }
 }

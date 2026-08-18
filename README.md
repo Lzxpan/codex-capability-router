@@ -7,7 +7,7 @@ Codex Capability Router v0.1.0-beta.1 is a local-first, context-first, read-only
 recommendation skill with bounded local discovery, deterministic routing, and
 bilingual output.
 
-This release has passed its deterministic functional validation suite: **36/36
+This release has passed its deterministic functional validation suite: **42/42
 tests pass**, including 12 routing scenarios (6 `zh-TW`, 6 `en`). Plugin Eval
 currently reports a high static deferred-context estimate. That estimate
 includes repository artifacts and is not measured runtime token consumption.
@@ -41,6 +41,9 @@ into a runtime-scoped registry and explainable advisory recommendations.
 - Applies runtime > CLI > explicit skill root > manual precedence.
 - Produces deterministic primary/optional recommendations and `en` or `zh-TW`
   catalog/output.
+- Adds a concise Selected Capabilities explanation with capability kind,
+  PRIMARY/OPTIONAL level, registry-provided Function metadata, and deterministic
+  reason codes rendered as short user-facing rationale.
 
 ## What the skill does NOT do
 
@@ -87,6 +90,11 @@ registry is `tests/fixtures/routing_registry.json` and is not a real user
 inventory. Generated bilingual catalogs are `docs/CATALOG.en.md` and
 `docs/CATALOG.zh-TW.md`.
 
+Optional bilingual Function metadata uses the registry `function` object with
+`en` and `zh-TW` values. Machine-readable route output retains
+`selection_evidence` with capability ID, selection level, reason codes, and
+matched evidence.
+
 ## Routing behavior
 
 Routing is deterministic and advisory-only. It excludes `unavailable` and
@@ -95,6 +103,13 @@ installed primary recommendations and two available optional recommendations,
 and reports rationale and rejected-candidate provenance. A trusted,
 explicitly marked `unknown` record may appear only in the separate
 recommendation-only section.
+
+After routing, the human-readable output includes `Selected Capabilities` and,
+when applicable, `Selected Skills`. Each entry shows Name, Kind, selection level,
+Function, and a brief rationale derived only from recorded routing evidence such
+as trigger matches, requirement coverage, specialist match, availability, or
+optional coverage. Missing Function metadata uses an explicit unavailable
+fallback; it is never inferred from a category.
 
 ## Security and privacy model
 
@@ -131,6 +146,22 @@ Run the deterministic suite and regenerate the bilingual catalogs locally:
 python -m unittest discover -s tests -v
 python -m codex_capability_router.catalog --input tests/fixtures/routing_registry.json --output docs
 ```
+
+For a task such as `Fix the React component UI bug.`, the explanation includes:
+
+```text
+## Selected Capabilities
+### Selected Skills
+#### PRIMARY
+- Name: React UI Debugging
+  Kind: skill
+  Selection level: PRIMARY
+  Function: Diagnoses React UI regressions.
+  Why selected: The task matches trigger(s): react, component, ui, bug. It is a specialist match for the task category.
+```
+
+The rationale is rendered from deterministic route evidence; it is not a hidden
+reasoning trace.
 
 ## Stable release requirement
 
@@ -182,4 +213,5 @@ Marketplace submission.
 原始內容：README 仍標示 Phase 1，並否認目前 source 已存在的 discovery/routing。
 修改原因：同步公開說明與實際 v0.1.0 source，避免錯誤觸發與錯誤能力承諾。
 修改後功能：文件說明目前唯讀功能、Phase 5 軟體證據邊界與完整 local test command。
+修改紀錄（2026-08-18，Steve Peng）：補充 Phase 5D selected capability explanation、Function metadata 與 deterministic rationale 範例。
 -->

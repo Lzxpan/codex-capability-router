@@ -14,6 +14,10 @@ from .models import CapabilityKind, CapabilityRecord, CapabilityStatus
 # 原始內容：Phase 1 沒有輸入 payload 驗證。
 # 修改原因：避免 malformed、path 或不可靠狀態直接進入 registry。
 # 修改後功能：只接受 canonical public fields，缺少狀態時保留 unknown。
+# 修改紀錄（2026-08-18，Steve Peng）
+# 原始內容：canonical record 沒有可驗證的雙語 Function metadata。
+# 修改原因：Phase 5D explanation 必須只使用 registry 已提供的功能說明，不得從 category 或 trigger 幻想內容。
+# 修改後功能：接受 optional function.en/function.zh-TW，嚴格限制欄位、文字與 private path。
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 _SENSITIVE_FIELD_NAMES = {"api_key", "apikey", "credential", "credentials", "password", "secret", "token"}
@@ -37,6 +41,7 @@ _ALLOWED_RECORD_FIELDS = {
     "conflicts",
     "evidence",
     "recommendation_only",
+    "function",
 }
 
 
@@ -121,6 +126,7 @@ def record_from_mapping(
         raise ValueError("record: unsupported fields are not accepted")
 
     record_source = source if source is not None else payload.get("source")
+    function_en, function_zh_tw = _localized_function(payload.get("function"))
     return CapabilityRecord(
         id=_require_text(payload.get("id", payload.get("name")), "id", identifier=True),
         name=_require_text(payload.get("name"), "name"),
@@ -141,6 +147,8 @@ def record_from_mapping(
         conflicts=_text_sequence(payload.get("conflicts", ()), "conflicts"),
         evidence=_text_sequence(payload.get("evidence", ()), "evidence"),
         recommendation_only=_boolean(payload.get("recommendation_only", False), "recommendation_only"),
+        function_en=function_en,
+        function_zh_tw=function_zh_tw,
     )
 
 
@@ -164,6 +172,23 @@ def _optional_text(value: object, field: str) -> str | None:
     if value is None:
         return None
     return _require_text(value, field)
+
+
+def _localized_function(value: object) -> tuple[str | None, str | None]:
+    """驗證 optional bilingual Function object；不接受未列出的 language key。"""
+
+    if value is None:
+        return None, None
+    if not isinstance(value, Mapping):
+        raise ValueError("function: must be an object")
+    unsupported = set(value) - {"en", "zh-TW"}
+    if unsupported:
+        raise ValueError("function: unsupported language fields are not accepted")
+    function_en = _optional_text(value.get("en"), "function.en")
+    function_zh_tw = _optional_text(value.get("zh-TW"), "function.zh-TW")
+    if function_en is None and function_zh_tw is None:
+        raise ValueError("function: at least one locale value is required")
+    return function_en, function_zh_tw
 
 
 def _confidence(value: object) -> float | None:

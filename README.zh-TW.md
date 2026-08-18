@@ -6,7 +6,7 @@
 Codex Capability Router v0.1.0-beta.1 是 local-first、context-first、read-only 的 capability
 recommendation skill，提供有界 local discovery、deterministic routing 與雙語輸出。
 
-本版本已通過 deterministic functional validation suite：**36/36 tests
+本版本已通過 deterministic functional validation suite：**42/42 tests
 pass**，包含 12 個 routing scenarios（`zh-TW` 6 個、`en` 6 個）。Plugin Eval
 目前回報較高的 static deferred-context estimate；該估計包含 repository
 artifacts，並不是 measured runtime token consumption。正式升級為 stable
@@ -37,6 +37,8 @@ registry 與可解釋的 advisory recommendations。
   evidence 與 conflicts。
 - 套用 runtime > CLI > explicit skill root > manual 的來源優先順序。
 - 產生 deterministic 的主要/可選建議，以及 `en` 或 `zh-TW` catalog/output。
+- 新增簡潔的已選能力說明，顯示 capability 類型、PRIMARY/OPTIONAL 層級、registry
+  提供的 Function metadata，以及由 deterministic reason codes 產生的使用者可讀理由。
 
 ## Skill 不會做什麼
 
@@ -77,12 +79,22 @@ Runtime registry 是 canonical 且以單次 runtime 為範圍，只存在於目�
 `tests/fixtures/routing_registry.json`，不是實際 user inventory。雙語 catalog 為
 `docs/CATALOG.en.md` 與 `docs/CATALOG.zh-TW.md`。
 
+可選的雙語 Function metadata 使用 registry 的 `function` object，包含 `en` 與
+`zh-TW` 值。Machine-readable route output 保留 `selection_evidence`，包含 capability
+ID、selection level、reason codes 與 matched evidence。
+
 ## Routing 行為
 
 Routing 是 deterministic 且 advisory-only。它排除 `unavailable` 與一般 `unknown`，
 防止 Router 自我路由，最多保留 3 個 installed primary 與 2 個 available optional
 recommendations，並回報 rationale 與 rejected-candidate provenance。只有 trusted 且
 明確標記的 `unknown` 才能出現在獨立的 recommendation-only 區段。
+
+Routing 完成後，human-readable output 會包含「已選能力」，若有 skill 則另外顯示
+「已選技能」。每筆會顯示名稱、類型、選擇層級、功能與選用理由；理由只來自既有
+trigger match、requirement coverage、specialist match、availability 或 optional coverage
+等 routing evidence。缺少 Function metadata 時會使用明確 fallback，不會從 category
+自行推測功能。
 
 ## 安全與隱私模型
 
@@ -115,6 +127,21 @@ deployment、MCP hosting 與 automatic routing-policy learning。
 python -m unittest discover -s tests -v
 python -m codex_capability_router.catalog --input tests/fixtures/routing_registry.json --output docs
 ```
+
+例如任務為「請修正 React 元件的介面錯誤」時，說明會包含：
+
+```text
+## 已選能力
+### 已選技能
+#### PRIMARY
+- 名稱：React UI Debugging
+  類型：skill
+  選擇層級：PRIMARY
+  功能：診斷 React 介面回歸問題。
+  選用理由：任務符合觸發詞：react、元件、介面、錯誤。它是符合此任務類別的專門能力。
+```
+
+理由由 deterministic routing evidence 渲染，不是 hidden reasoning trace。
 
 ## Stable release requirement
 
@@ -164,4 +191,5 @@ Marketplace submission。
 原始內容：README 仍標示 Phase 1，並否認目前 source 已存在的 discovery/routing。
 修改原因：同步公開說明與實際 v0.1.0 source，避免錯誤觸發與錯誤能力承諾。
 修改後功能：文件說明目前唯讀功能、Phase 5 軟體證據邊界與完整 local test command。
+修改紀錄（2026-08-18，Steve Peng）：補充 Phase 5D 已選能力說明、Function metadata 與 deterministic 理由範例。
 -->
