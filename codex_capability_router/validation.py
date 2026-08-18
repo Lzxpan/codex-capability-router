@@ -18,6 +18,10 @@ from .models import CapabilityKind, CapabilityRecord, CapabilityStatus
 # 原始內容：canonical record 沒有可驗證的雙語 Function metadata。
 # 修改原因：Phase 5D explanation 必須只使用 registry 已提供的功能說明，不得從 category 或 trigger 幻想內容。
 # 修改後功能：接受 optional function.en/function.zh-TW，嚴格限制欄位、文字與 private path。
+# 修改紀錄（2026-08-18，Steve Peng）
+# 原始內容：canonical record 無法標記 Router controller、router aliases 或 internal discovery support。
+# 修改原因：Phase 5E 需要在 untrusted record 邊界明確驗證這些 selection exclusion metadata。
+# 修改後功能：接受嚴格 boolean/文字序列 metadata，仍拒絕 unsupported、敏感值與 absolute path。
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 _SENSITIVE_FIELD_NAMES = {"api_key", "apikey", "credential", "credentials", "password", "secret", "token"}
@@ -42,6 +46,9 @@ _ALLOWED_RECORD_FIELDS = {
     "evidence",
     "recommendation_only",
     "function",
+    "controller",
+    "aliases",
+    "routing_support",
 }
 
 
@@ -149,6 +156,9 @@ def record_from_mapping(
         recommendation_only=_boolean(payload.get("recommendation_only", False), "recommendation_only"),
         function_en=function_en,
         function_zh_tw=function_zh_tw,
+        controller=_boolean(payload.get("controller", False), "controller"),
+        aliases=_text_sequence(payload.get("aliases", ()), "aliases"),
+        routing_support=_boolean(payload.get("routing_support", False), "routing_support"),
     )
 
 

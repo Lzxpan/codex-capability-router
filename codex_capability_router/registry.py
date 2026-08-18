@@ -16,6 +16,10 @@ from .models import CapabilityRecord, DiscoveryDiagnostic, DiscoveryResult
 # 原始內容：merge conflict 比對未涵蓋雙語 Function metadata。
 # 修改原因：Phase 5D explanation 使用 canonical Function，來源衝突不能被靜默覆蓋。
 # 修改後功能：保留 function.en/function.zh-TW 的 field-level conflict evidence。
+# 修改紀錄（2026-08-18，Steve Peng）
+# 原始內容：registry merge 只保留 winner 的 controller/support metadata。
+# 修改原因：Phase 5E 的 exclusion metadata 必須跨來源保留，避免較低 precedence claim 讓 controller/tool 進入 selection。
+# 修改後功能：以保守 OR 與 alias union 保留 controller、routing support 與 router aliases，並保留 conflict evidence。
 
 
 def classify_capability(record: CapabilityRecord) -> CapabilityRecord:
@@ -78,6 +82,9 @@ def merge_capability_records(records: Sequence[CapabilityRecord]) -> DiscoveryRe
                 provenance=provenance,
                 conflicts=conflicts,
                 evidence=evidence,
+                controller=any(claim.controller for claim in claims),
+                aliases=_unique(value for claim in claims for value in claim.aliases),
+                routing_support=any(claim.routing_support for claim in claims),
             )
         )
 
@@ -106,6 +113,9 @@ def _merge_same_source_claims(first: CapabilityRecord, second: CapabilityRecord)
         provenance=_unique((*first.provenance, *second.provenance, first.source, second.source)),
         conflicts=conflicts,
         evidence=_unique((*first.evidence, *second.evidence)),
+        controller=first.controller or second.controller,
+        aliases=_unique((*first.aliases, *second.aliases)),
+        routing_support=first.routing_support or second.routing_support,
     )
 
 
@@ -121,6 +131,9 @@ def _claim_conflicts(records: Sequence[CapabilityRecord]) -> tuple[str, ...]:
         ("recommendation_only", lambda record: record.recommendation_only),
         ("function_en", lambda record: record.function_en),
         ("function_zh_tw", lambda record: record.function_zh_tw),
+        ("controller", lambda record: record.controller),
+        ("aliases", lambda record: record.aliases),
+        ("routing_support", lambda record: record.routing_support),
     )
     conflicts: list[str] = []
     for field, value_of in fields:

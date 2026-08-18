@@ -24,6 +24,10 @@ from .registry import merge_capability_records
 # 原始內容：route result 只有 selected records，沒有可供 explanation renderer 使用的結構化 selection evidence。
 # 修改原因：Phase 5D 需要 deterministic、auditable reason codes，且不得產生 hidden reasoning trace。
 # 修改後功能：依既有 task/category/trigger/ranking evidence 產生 selection_evidence；不改變候選排序或 selection limits。
+# 修改紀錄（2026-08-18，Steve Peng）
+# 原始內容：self-routing 只比對單一 codex-capability-router ID，route-only 也沒有 execution metadata。
+# 修改原因：Phase 5E 要排除 controller/aliases/internal support，且 execution permission 不得改變 target-task selection。
+# 修改後功能：以固定 controller aliases 與 routing_support filter 保護 downstream set，並只回傳 execution_allowed metadata。
 
 _TASK_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -75,6 +79,16 @@ _BROAD_TERMS = {
 _PRIMARY_LEVEL = "PRIMARY"
 _OPTIONAL_LEVEL = "OPTIONAL"
 _RECOMMENDATION_ONLY_LEVEL = "RECOMMENDATION_ONLY"
+_CONTROLLER_ALIASES = frozenset(
+    {
+        "codex-capability-router",
+        "codex capability router",
+        "codex-router",
+        "codex router",
+        "capability-router",
+        "capability router",
+    }
+)
 
 
 def classify_task(user_task: str) -> tuple[str, ...]:
@@ -103,8 +117,11 @@ def route(request: RouterInput) -> RecommendationResult:
     recommendation_only: list[CapabilityRecord] = []
 
     for record in registry:
-        if record.id.casefold() == "codex-capability-router":
+        if _is_controller(record):
             rejected.append(_rejected(record, "self-routing protection"))
+            continue
+        if record.routing_support:
+            # ponytail: internal support 完全不進 output；需要獨立 support trace 時才新增 routing_support section。
             continue
         if record.status == CapabilityStatus.UNKNOWN:
             if record.recommendation_only and _trusted_recommendation_source(record.source) and _is_relevant(record, task, task_categories):
@@ -157,7 +174,15 @@ def route(request: RouterInput) -> RecommendationResult:
         for record in recommendation_records
     )
     rationale = _rationale(request, task_categories, primary, optional, recommendation_records)
-    return RecommendationResult(primary, optional, tuple(rejected), rationale, recommendation_records, selection_evidence)
+    return RecommendationResult(
+        primary,
+        optional,
+        tuple(rejected),
+        rationale,
+        recommendation_records,
+        selection_evidence,
+        execution_allowed=request.execution_allowed,
+    )
 
 
 def _rejected(record: CapabilityRecord, reason: str) -> RejectedCandidate:
@@ -179,6 +204,15 @@ def _trusted_recommendation_source(source: str) -> bool:
 
     normalized = source.casefold()
     return normalized.startswith("runtime") or normalized.startswith("manual")
+
+
+def _is_controller(record: CapabilityRecord) -> bool:
+    """辨識明確 controller flag 與固定 Router aliases，永久排除 downstream selection。"""
+
+    if record.controller:
+        return True
+    identifiers = (record.id, record.name, *record.aliases)
+    return any(_normalize(value) in _CONTROLLER_ALIASES for value in identifiers)
 
 
 def _is_relevant(record: CapabilityRecord, task: str, task_categories: tuple[str, ...]) -> bool:

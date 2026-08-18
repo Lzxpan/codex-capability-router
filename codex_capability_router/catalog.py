@@ -21,6 +21,10 @@ from .validation import record_from_mapping
 # 原始內容：render_recommendations 只有 primary/optional ID 清單，沒有 selected capability explanation。
 # 修改原因：Phase 5D 需要雙語、短句、可稽核且不暴露 chain-of-thought 的 Function/Why selected output。
 # 修改後功能：依 registry Function metadata 與 route selection_evidence 渲染 selected skills、其他 capability、no-match 與 recommendation-only 區段。
+# 修改紀錄（2026-08-18，Steve Peng）
+# 原始內容：route-only result 沒有 user-facing execution suppression 說明。
+# 修改原因：Phase 5E 必須清楚表達 selected 不等於 executed，且不把 internal support 混入 selected output。
+# 修改後功能：只在 execution_allowed=false 時加入簡短 route-only 說明，不新增 execution engine。
 
 SUPPORTED_LANGUAGES = ("en", "zh-TW", "auto")
 
@@ -49,6 +53,7 @@ _LABELS = {
         "not_automatic": "It will not be installed or executed automatically.",
         "no_safe_match": "No suitable installed and safely usable capability was found.",
         "no_evidence": "No deterministic routing evidence was recorded.",
+        "execution_suppressed": "Execution: not performed because this request is route-only.",
         "rejected": "Rejected Candidates",
         "rationale": "Rationale",
         "no_recommendation": "No recommendation available.",
@@ -82,6 +87,7 @@ _LABELS = {
         "not_automatic": "不會自動安裝，也不會自動執行。",
         "no_safe_match": "目前沒有找到符合條件且可安全使用的已安裝能力。",
         "no_evidence": "目前沒有記錄可稽核的路由證據。",
+        "execution_suppressed": "執行：此請求為只路由模式，因此未執行。",
         "rejected": "拒絕候選",
         "rationale": "理由",
         "no_recommendation": "目前沒有可用的建議。",
@@ -153,6 +159,8 @@ def render_recommendations(
         "",
     ]
     lines.extend(_render_selected_explanations(result, locale))
+    if not result.execution_allowed:
+        lines.extend(["", labels["execution_suppressed"]])
     lines.extend([
         "",
         f"## {labels['primary']}",

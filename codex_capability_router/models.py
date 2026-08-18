@@ -15,6 +15,10 @@ from enum import Enum
 # 原始內容：RecommendationResult 沒有 selected capability 的結構化路由證據，record 也沒有雙語 Function metadata。
 # 修改原因：Phase 5D 需要可稽核的 selected explanation，且不允許 renderer 以 category 猜測功能。
 # 修改後功能：新增 optional function metadata 與 SelectionEvidence；既有 record 欄位與 route result positional 順序保持相容。
+# 修改紀錄（2026-08-18，Steve Peng）
+# 原始內容：route-only request 無法表達 execution permission，record 也無法區分 controller 與 routing support。
+# 修改原因：Phase 5E 必須讓 downstream selection 與 execution suppression 分離，並阻止 controller/internal discovery tool 被選取。
+# 修改後功能：新增最小 execution_allowed、controller、aliases 與 routing_support metadata；不新增 execution engine。
 
 
 class CapabilityKind(str, Enum):
@@ -50,11 +54,12 @@ class SelectionEvidence:
 
 @dataclass(frozen=True)
 class RouterInput:
-    """Router 輸入：使用者任務、fixture/runtime registry 與可選輸出語言。"""
+    """Router 輸入：任務、registry、輸出語言與不影響 selection 的 execution permission。"""
 
     user_task: str
     capability_registry: tuple["CapabilityRecord", ...]
     requested_output_language: str | None = None
+    execution_allowed: bool = True
 
     def __post_init__(self) -> None:
         """驗證信任邊界並固定 registry 順序容器，避免 route 改寫呼叫者資料。"""
@@ -68,6 +73,8 @@ class RouterInput:
             or not self.requested_output_language.strip()
         ):
             raise ValueError("requested_output_language must be a non-empty string or null")
+        if not isinstance(self.execution_allowed, bool):
+            raise ValueError("execution_allowed must be a boolean")
 
 
 @dataclass(frozen=True)
@@ -99,6 +106,7 @@ class RecommendationResult:
     rationale: str
     recommendation_only: tuple["CapabilityRecord", ...] = ()
     selection_evidence: tuple[SelectionEvidence, ...] = ()
+    execution_allowed: bool = True
 
     def __post_init__(self) -> None:
         """在資料邊界再次保護 hard selection limits，避免呼叫端傳出超額結果。"""
@@ -107,6 +115,8 @@ class RecommendationResult:
             raise ValueError("selected_primary cannot contain more than 3 capabilities")
         if len(self.selected_optional) > 2:
             raise ValueError("selected_optional cannot contain more than 2 capabilities")
+        if not isinstance(self.execution_allowed, bool):
+            raise ValueError("execution_allowed must be a boolean")
 
 
 @dataclass(frozen=True)
@@ -139,14 +149,21 @@ class CapabilityRecord:
     recommendation_only: bool = False
     function_en: str | None = None
     function_zh_tw: str | None = None
+    controller: bool = False
+    aliases: tuple[str, ...] = ()
+    routing_support: bool = False
 
     def __post_init__(self) -> None:
-        """在 model boundary 驗證 confidence 與 recommendation-only 型別。"""
+        """在 model boundary 驗證 confidence、selection metadata 與 recommendation-only 型別。"""
 
         if self.confidence is not None and not 0.0 <= self.confidence <= 1.0:
             raise ValueError("confidence must be between 0.0 and 1.0")
         if not isinstance(self.recommendation_only, bool):
             raise ValueError("recommendation_only must be a boolean")
+        if not isinstance(self.controller, bool):
+            raise ValueError("controller must be a boolean")
+        if not isinstance(self.routing_support, bool):
+            raise ValueError("routing_support must be a boolean")
 
     def to_mapping(self) -> dict[str, object]:
         """將 record 轉成完整 canonical mapping，供 JSON registry 輸出。"""
@@ -174,6 +191,12 @@ class CapabilityRecord:
         }
         if self.function_en is not None or self.function_zh_tw is not None:
             payload["function"] = {"en": self.function_en, "zh-TW": self.function_zh_tw}
+        if self.controller:
+            payload["controller"] = True
+        if self.aliases:
+            payload["aliases"] = list(self.aliases)
+        if self.routing_support:
+            payload["routing_support"] = True
         return payload
 
     def function_for(self, locale: str) -> str | None:
