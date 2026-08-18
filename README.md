@@ -1,18 +1,24 @@
 # Codex Capability Router
 
-Version: `v0.1.0-beta.1`
+Version: `v0.1.0-beta.2`
 Status: **Beta / Pre-release**
 
-Codex Capability Router v0.1.0-beta.1 is a local-first, context-first, read-only capability
+Codex Capability Router v0.1.0-beta.2 is a local-first, context-first, read-only capability
 recommendation skill with bounded local discovery, deterministic routing, and
 bilingual output.
 
-This release has passed its deterministic functional validation suite: **42/42
+This release has passed its deterministic functional validation suite: **46/46
 tests pass**, including 12 routing scenarios (6 `zh-TW`, 6 `en`). Plugin Eval
 currently reports a high static deferred-context estimate. That estimate
 includes repository artifacts and is not measured runtime token consumption.
 Empirical runtime token measurement remains a requirement before promotion to
 stable `v0.1.0`.
+
+Real-world local acceptance has also completed successfully in one independent
+STM32G0 firmware workspace. It verified automatic and explicit routing,
+workspace-specific specialist preference, route-only selection, downstream
+execution, and the PASS/FAIL/BLOCKED/HARDWARE_PENDING evidence boundaries.
+Private project details are intentionally omitted.
 
 ## Current v0.1.0 boundary
 
@@ -103,6 +109,11 @@ installed primary recommendations and two available optional recommendations,
 and reports rationale and rejected-candidate provenance. A trusted,
 explicitly marked `unknown` record may appear only in the separate
 recommendation-only section.
+
+The router controller itself and records marked as internal routing support are
+permanently excluded from downstream task selections. In route-only mode,
+target-task capabilities are still selected with `execution_allowed=false`;
+selection does not execute the selected capability.
 
 After routing, the human-readable output includes `Selected Capabilities` and,
 when applicable, `Selected Skills`. Each entry shows Name, Kind, selection level,
@@ -195,6 +206,19 @@ The bounded evaluation contains exactly twelve routing cases. Local software
 tests do not prove hardware, physical water-path, external capability, or
 biological acceptance.
 
+## Real-world local acceptance
+
+One independent STM32G0 firmware workspace completed the beta acceptance case:
+
+- Auto-trigger, explicit routing, workspace-specific specialist preference,
+  overlap/deduplication, controller exclusion, internal support exclusion, and
+  route-only semantics: PASS.
+- Selected Capability Explanation, deterministic rationale, downstream skill
+  execution, and PASS/FAIL/BLOCKED/HARDWARE_PENDING boundaries: PASS.
+
+This is public routing evidence only; private source, absolute paths, and
+project inventory are not part of this repository.
+
 ## Local verification
 
 Use Python 3.11 or newer and the standard library only:
@@ -214,4 +238,8 @@ Marketplace submission.
 修改原因：同步公開說明與實際 v0.1.0 source，避免錯誤觸發與錯誤能力承諾。
 修改後功能：文件說明目前唯讀功能、Phase 5 軟體證據邊界與完整 local test command。
 修改紀錄（2026-08-18，Steve Peng）：補充 Phase 5D selected capability explanation、Function metadata 與 deterministic rationale 範例。
+修改紀錄（2026-08-18，Steve Peng）
+原始內容：README 仍標示 beta.1/42 tests，且未記錄 Phase 5E/5E-R 的 route-only 與 STM32G0 acceptance 結果。
+修改原因：同步 beta.2 公開文件與已驗證的路由排除、execution suppression、46/46 deterministic suite 及 real-world evidence。
+修改後功能：讀者可辨識目前 beta.2 行為、已選能力說明、recommendation-only 分離、無自動安裝/權限變更與公開驗收邊界。
 -->

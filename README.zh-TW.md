@@ -1,16 +1,21 @@
 # Codex Capability Router
 
-版本：`v0.1.0-beta.1`
+版本：`v0.1.0-beta.2`
 狀態：**Beta / Pre-release（公開測試版）**
 
-Codex Capability Router v0.1.0-beta.1 是 local-first、context-first、read-only 的 capability
+Codex Capability Router v0.1.0-beta.2 是 local-first、context-first、read-only 的 capability
 recommendation skill，提供有界 local discovery、deterministic routing 與雙語輸出。
 
-本版本已通過 deterministic functional validation suite：**42/42 tests
+本版本已通過 deterministic functional validation suite：**46/46 tests
 pass**，包含 12 個 routing scenarios（`zh-TW` 6 個、`en` 6 個）。Plugin Eval
 目前回報較高的 static deferred-context estimate；該估計包含 repository
 artifacts，並不是 measured runtime token consumption。正式升級為 stable
 `v0.1.0` 前，仍必須取得 empirical runtime token measurement。
+
+另有一個獨立 STM32G0 firmware workspace 已完成 real-world local acceptance，
+驗證 automatic/explicit routing、workspace-specific specialist preference、
+route-only selection、downstream execution，以及 PASS/FAIL/BLOCKED/
+HARDWARE_PENDING 的 evidence boundaries。私有專案細節刻意不公開。
 
 ## 目前 v0.1.0 邊界
 
@@ -89,6 +94,10 @@ Routing 是 deterministic 且 advisory-only。它排除 `unavailable` 與一般 
 防止 Router 自我路由，最多保留 3 個 installed primary 與 2 個 available optional
 recommendations，並回報 rationale 與 rejected-candidate provenance。只有 trusted 且
 明確標記的 `unknown` 才能出現在獨立的 recommendation-only 區段。
+
+Router controller 本身，以及標記為 internal routing support 的 records，永久排除於
+downstream task selection。route-only mode 仍會選出 target-task capabilities，並以
+`execution_allowed=false` 抑制執行；選擇不等於執行 capability。
 
 Routing 完成後，human-readable output 會包含「已選能力」，若有 skill 則另外顯示
 「已選技能」。每筆會顯示名稱、類型、選擇層級、功能與選用理由；理由只來自既有
@@ -173,6 +182,18 @@ examples/
 有界評估固定包含十二個 routing cases。Local software tests 不證明硬體、實體
 water-path、外部 capability 或生物效能驗收。
 
+## Real-world local acceptance
+
+一個獨立 STM32G0 firmware workspace 已完成本 beta 的 acceptance case：
+
+- Auto-trigger、explicit routing、workspace-specific specialist preference、
+  overlap/deduplication、controller exclusion、internal support exclusion 與
+  route-only semantics：PASS。
+- Selected Capability Explanation、deterministic rationale、downstream skill
+  execution，以及 PASS/FAIL/BLOCKED/HARDWARE_PENDING 邊界：PASS。
+
+這些是公開 routing evidence；私有 source、絕對路徑與專案 inventory 不納入本 repository。
+
 ## Local verification
 
 使用 Python 3.11 以上版本與 standard library only：
@@ -192,4 +213,8 @@ Marketplace submission。
 修改原因：同步公開說明與實際 v0.1.0 source，避免錯誤觸發與錯誤能力承諾。
 修改後功能：文件說明目前唯讀功能、Phase 5 軟體證據邊界與完整 local test command。
 修改紀錄（2026-08-18，Steve Peng）：補充 Phase 5D 已選能力說明、Function metadata 與 deterministic 理由範例。
+修改紀錄（2026-08-18，Steve Peng）
+原始內容：README 仍標示 beta.1/42 tests，且未記錄 Phase 5E/5E-R 的 route-only 與 STM32G0 acceptance 結果。
+修改原因：同步 beta.2 公開文件與已驗證的路由排除、execution suppression、46/46 deterministic suite 及 real-world evidence。
+修改後功能：讀者可辨識目前 beta.2 行為、已選能力說明、recommendation-only 分離、無自動安裝/權限變更與公開驗收邊界。
 -->
