@@ -18,6 +18,10 @@ backups/
 tmp/
 temp/
 
+# 公開發布排除：內部計畫、審查筆記與本機產物
+docs/superpowers/
+docs-generated/
+
 # Private editor and OS state
 .vscode/
 .idea/

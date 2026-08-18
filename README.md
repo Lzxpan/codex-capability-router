@@ -157,7 +157,7 @@ For a task such as `Fix the React component UI bug.`, the explanation includes:
   Kind: skill
   Selection level: PRIMARY
   Function: Diagnoses React UI regressions.
-  Why selected: The task matches trigger(s): react, component, ui, bug. It is a specialist match for the task category.
+  Why selected: The task matches React/UI/debugging triggers and this is a specialist capability.
 ```
 
 The rationale is rendered from deterministic route evidence; it is not a hidden

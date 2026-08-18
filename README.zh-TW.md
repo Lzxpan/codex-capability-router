@@ -138,7 +138,7 @@ python -m codex_capability_router.catalog --input tests/fixtures/routing_registr
   類型：skill
   選擇層級：PRIMARY
   功能：診斷 React 介面回歸問題。
-  選用理由：任務符合觸發詞：react、元件、介面、錯誤。它是符合此任務類別的專門能力。
+  選用理由：目前任務符合 React、UI 與 debugging 相關觸發條件，且此能力屬於專門能力。
 ```
 
 理由由 deterministic routing evidence 渲染，不是 hidden reasoning trace。
