@@ -19,6 +19,10 @@ from enum import Enum
 # 原始內容：route-only request 無法表達 execution permission，record 也無法區分 controller 與 routing support。
 # 修改原因：Phase 5E 必須讓 downstream selection 與 execution suppression 分離，並阻止 controller/internal discovery tool 被選取。
 # 修改後功能：新增最小 execution_allowed、controller、aliases 與 routing_support metadata；不新增 execution engine。
+# 修改紀錄（2026-08-19，Steve Peng）
+# 原始內容：非程式 capability 的 description/provides metadata 無法進入 canonical record。
+# 修改原因：Phase 5F 發現 document/image/PDF capability 可被 discovery 讀取，但缺少 generic artifact requirement 時無法可靠進入 task selection。
+# 修改後功能：保留可供 routing 使用的 description 與 provides；不依 source 猜測 task capability 或 routing support。
 
 
 class CapabilityKind(str, Enum):
@@ -152,6 +156,8 @@ class CapabilityRecord:
     controller: bool = False
     aliases: tuple[str, ...] = ()
     routing_support: bool = False
+    description: str | None = None
+    provides: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """在 model boundary 驗證 confidence、selection metadata 與 recommendation-only 型別。"""
@@ -197,6 +203,10 @@ class CapabilityRecord:
             payload["aliases"] = list(self.aliases)
         if self.routing_support:
             payload["routing_support"] = True
+        if self.description is not None:
+            payload["description"] = self.description
+        if self.provides:
+            payload["provides"] = list(self.provides)
         return payload
 
     def function_for(self, locale: str) -> str | None:

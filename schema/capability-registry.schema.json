@@ -37,6 +37,8 @@
     "conflicts": { "type": "array", "items": { "type": "string" } },
     "evidence": { "type": "array", "items": { "type": "string" } },
     "recommendation_only": { "type": "boolean" },
+    "description": { "type": ["string", "null"], "minLength": 1 },
+    "provides": { "type": "array", "items": { "type": "string" } },
     "function": {
       "type": "object",
       "additionalProperties": false,

@@ -22,6 +22,10 @@ from .models import CapabilityKind, CapabilityRecord, CapabilityStatus
 # 原始內容：canonical record 無法標記 Router controller、router aliases 或 internal discovery support。
 # 修改原因：Phase 5E 需要在 untrusted record 邊界明確驗證這些 selection exclusion metadata。
 # 修改後功能：接受嚴格 boolean/文字序列 metadata，仍拒絕 unsupported、敏感值與 absolute path。
+# 修改紀錄（2026-08-19，Steve Peng）
+# 原始內容：canonical record 不接受 description/provides，非程式 artifact requirement 只能依賴固定 triggers。
+# 修改原因：Phase 5F 需要讓 discovery 正規化 generic task metadata，避免 system/built-in/plugin capability 因 metadata 缺口無法被選取。
+# 修改後功能：驗證並保留 description/provides；role 仍由 routing_support 明確標記，不由 source 推導。
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 _SENSITIVE_FIELD_NAMES = {"api_key", "apikey", "credential", "credentials", "password", "secret", "token"}
@@ -49,6 +53,8 @@ _ALLOWED_RECORD_FIELDS = {
     "controller",
     "aliases",
     "routing_support",
+    "description",
+    "provides",
 }
 
 
@@ -159,6 +165,8 @@ def record_from_mapping(
         controller=_boolean(payload.get("controller", False), "controller"),
         aliases=_text_sequence(payload.get("aliases", ()), "aliases"),
         routing_support=_boolean(payload.get("routing_support", False), "routing_support"),
+        description=_optional_text(payload.get("description"), "description"),
+        provides=_text_sequence(payload.get("provides", ()), "provides"),
     )
 
 

@@ -28,6 +28,10 @@ from .registry import merge_capability_records
 # 原始內容：self-routing 只比對單一 codex-capability-router ID，route-only 也沒有 execution metadata。
 # 修改原因：Phase 5E 要排除 controller/aliases/internal support，且 execution permission 不得改變 target-task selection。
 # 修改後功能：以固定 controller aliases 與 routing_support filter 保護 downstream set，並只回傳 execution_allowed metadata。
+# 修改紀錄（2026-08-19，Steve Peng）
+# 原始內容：relevance/ranking 只消費固定 categories、preferred_for 與 triggers，description/provides 無法覆蓋非程式 artifact requirement。
+# 修改原因：Phase 5F 發現 capability 已被 discovery/normalization 保留，但 document/image/PDF task 會因 generic metadata 未參與 routing 而落空。
+# 修改後功能：以 record 的 description/provides 擴充 generic relevance、ranking 與 bounded selection evidence；source 不參與 role 判定。
 
 _TASK_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -223,12 +227,14 @@ def _is_relevant(record: CapabilityRecord, task: str, task_categories: tuple[str
     if set(task_categories) & normalized_categories or set(task_categories) & normalized_preferred:
         return True
 
-    for value in (*record.categories, *record.preferred_for, *record.triggers):
+    for value in (*record.categories, *record.preferred_for, *record.triggers, *record.provides):
         normalized_value = _normalize(value)
         if normalized_value in _BROAD_TERMS:
             continue
         if _phrase_in_text(task, normalized_value):
             return True
+    if record.description and _phrase_in_text(task, record.description):
+        return True
     return False
 
 
@@ -239,7 +245,9 @@ def _ranking_key(
 ) -> tuple[int, int, int, int, int, int, str, str]:
     """建立固定排序 tuple：exact、specialist、installed、preferred、evidence、priority、id。"""
 
-    exact = int(any(_phrase_in_text(task, trigger) for trigger in record.triggers))
+    exact = int(
+        any(_phrase_in_text(task, value) for value in (*record.triggers, *record.provides))
+    )
     specialist = int(not _is_generic(record))
     installed = int(record.status == CapabilityStatus.INSTALLED)
     preferred = int(
@@ -251,7 +259,7 @@ def _ranking_key(
     )
     evidence = sum(
         _phrase_in_text(task, value)
-        for value in (*record.categories, *record.triggers)
+        for value in (*record.categories, *record.triggers, *record.provides)
         if _normalize(value) not in _BROAD_TERMS
     )
     return (-exact, -specialist, -installed, -preferred, -evidence, -record.priority, record.id.casefold(), record.id)
@@ -275,16 +283,22 @@ def _selection_evidence(
     matched_triggers = tuple(
         trigger for trigger in record.triggers if _phrase_in_text(task, trigger)
     )
+    matched_provides = tuple(
+        value for value in record.provides if _phrase_in_text(task, value)
+    )
     matched_requirements = _unique_text(
         value
-        for value in (*record.preferred_for, *record.categories)
+        for value in (*record.preferred_for, *record.categories, *matched_provides)
         if _normalize(value) in task_categories
+        or value in matched_provides
     )
     reason_codes: list[str] = []
     if _phrase_in_text(task, record.id) or _phrase_in_text(task, record.name):
         reason_codes.append("explicit_request")
     if matched_triggers:
         reason_codes.append("exact_trigger_match")
+    if matched_provides:
+        reason_codes.append("provides_match")
     if not _is_generic(record):
         reason_codes.append("specialist_match")
     if matched_requirements:
