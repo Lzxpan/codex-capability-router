@@ -90,6 +90,68 @@ class Phase2DiscoveryTests(unittest.TestCase):
 
             self.assertEqual([record.id for record in result.records], ["valid-skill"])
 
+    # 修改紀錄（2026-08-19，Steve Peng）
+    # 原始內容：discovery tests 僅覆蓋單行 frontmatter，未固定合法 multiline scalar 與 malformed 邊界。
+    # 修改原因：Phase 5G-A 必須先以 synthetic fixture 重現 humanizer-zh 的 `description: |` 相容性問題。
+    # 修改後功能：固定 description 保留、normalized registry 輸出，以及真正 malformed metadata 的診斷行為。
+    def test_multiline_frontmatter_skill_is_discovered(self) -> None:
+        """合法的 block scalar description 可進入 normalized registry。"""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            skill = root / "multiline"
+            skill.mkdir()
+            (skill / "SKILL.md").write_text(
+                "---\n"
+                "name: synthetic-multiline-skill\n"
+                "description: |\n"
+                "  First description line.\n"
+                "  Second description line.\n"
+                "allowed-tools:\n"
+                "  - Read\n"
+                "  - Write\n"
+                "metadata:\n"
+                "  trigger: generic trigger\n"
+                "  source: generic source\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            result = discover_skill_roots([root])
+
+            self.assertEqual(result.diagnostics, ())
+            self.assertEqual(len(result.records), 1)
+            record = result.records[0]
+            self.assertEqual(record.name, "synthetic-multiline-skill")
+            self.assertEqual(record.description, "First description line.\nSecond description line.")
+            normalized = json.loads(result.to_registry_json())
+            self.assertEqual(normalized[0]["name"], "synthetic-multiline-skill")
+            self.assertEqual(normalized[0]["description"], record.description)
+            self.assertNotIn(str(root), result.to_registry_json())
+
+    def test_truly_malformed_frontmatter_remains_diagnostic(self) -> None:
+        """未縮排的 block scalar 後續內容不得被猜測成 metadata。"""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            skill = root / "malformed"
+            skill.mkdir()
+            (skill / "SKILL.md").write_text(
+                "---\n"
+                "name: synthetic-malformed-skill\n"
+                "description: |\n"
+                "  Valid description line.\n"
+                "not-a-metadata-entry\n"
+                "---\n",
+                encoding="utf-8",
+            )
+
+            result = discover_skill_roots([root])
+
+            self.assertEqual(result.records, ())
+            self.assertEqual([diagnostic.code for diagnostic in result.diagnostics], ["malformed_skill"])
+            self.assertNotIn(str(root), result.diagnostics[0].message)
+
     def test_malformed_skill_md_handled_safely(self) -> None:
         """格式錯誤的 SKILL.md 只產生診斷，不中斷其他 discovery。"""
 

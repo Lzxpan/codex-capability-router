@@ -230,9 +230,10 @@ def _read_skill(directory: Path, source: str) -> tuple[CapabilityRecord | None, 
     metadata = _frontmatter(text)
     if metadata is None:
         return None, DiscoveryDiagnostic("malformed_skill", "skill metadata is malformed", source)
-    # SKILL.md 的 description 是入口 metadata，不是 canonical registry field；
-    # discovery adapter 在轉換邊界消費它，JSON/manual/probe 仍維持 strict schema。
-    metadata.pop("description", None)
+    # 修改紀錄（2026-08-19，Steve Peng）
+    # 原始內容：discovery adapter 會移除 SKILL.md 的 description，且無法保留合法 multiline scalar。
+    # 修改原因：Phase 5G-A 要讓合法 skill description 進入 Phase 5F 已支援的 canonical record。
+    # 修改後功能：保留經 bounded parser 驗證的 description；未知結構仍由 record validation 拒絕。
     metadata.setdefault("kind", CapabilityKind.SKILL.value)
     metadata.setdefault("status", "unknown")
     try:
@@ -242,8 +243,9 @@ def _read_skill(directory: Path, source: str) -> tuple[CapabilityRecord | None, 
 
 
 def _frontmatter(text: str) -> dict[str, object] | None:
-    """解析不依賴第三方 YAML parser 的最小 frontmatter。"""
+    """解析不依賴第三方 YAML parser 的 bounded frontmatter subset。"""
 
+    # ponytail: 只支援 repo/runtime 已出現的 scalar 與兩個 skill section；其他 YAML 結構維持 malformed，需求出現時再擴充。
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return None
@@ -253,17 +255,126 @@ def _frontmatter(text: str) -> dict[str, object] | None:
         return None
 
     metadata: dict[str, object] = {}
-    for line in lines[1:end]:
+    seen_keys: set[str] = set()
+    index = 1
+    while index < end:
+        line = lines[index]
+        if not line.strip():
+            return None
         key, separator, value = line.partition(":")
         if not separator:
             return None
         normalized_key = key.strip()
-        if not normalized_key or normalized_key in metadata:
+        if not normalized_key or normalized_key in seen_keys:
             return None
-        metadata[normalized_key] = _frontmatter_value(value.strip())
+        seen_keys.add(normalized_key)
+        scalar = value.strip()
+        if normalized_key in {"allowed-tools", "metadata"} and not scalar:
+            index = _skip_ignored_frontmatter_section(lines, index + 1, end, normalized_key)
+            if index is None:
+                return None
+            continue
+        if scalar in {"|", ">"}:
+            parsed, next_index = _frontmatter_block_scalar(lines, index + 1, end, scalar)
+            if parsed is None:
+                return None
+            metadata[normalized_key] = parsed
+            index = next_index
+            continue
+        metadata[normalized_key] = _frontmatter_value(scalar)
+        index += 1
     if not metadata.get("name"):
         return None
     return metadata
+
+
+def _frontmatter_block_scalar(
+    lines: list[str],
+    start: int,
+    end: int,
+    indicator: str,
+) -> tuple[str | None, int]:
+    """解析 `|` literal 或 `>` folded 的固定縮排 scalar，不猜測其他 YAML 規則。"""
+
+    values: list[str] = []
+    content_indent: int | None = None
+    index = start
+    while index < end:
+        line = lines[index]
+        if not line.strip():
+            if content_indent is not None:
+                values.append("")
+            index += 1
+            continue
+        if line.startswith("\t"):
+            return None, index
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            break
+        if content_indent is None:
+            content_indent = indent
+        if indent < content_indent:
+            return None, index
+        values.append(line[content_indent:])
+        index += 1
+
+    if content_indent is None:
+        return None, index
+    while values and values[-1] == "":
+        values.pop()
+    if indicator == "|":
+        return "\n".join(values), index
+
+    folded: list[str] = []
+    for value in values:
+        if not folded or value == "":
+            folded.append(value)
+        elif folded[-1] == "":
+            folded.append(value)
+        else:
+            folded[-1] += f" {value}"
+    return "\n".join(folded), index
+
+
+def _skip_ignored_frontmatter_section(
+    lines: list[str],
+    start: int,
+    end: int,
+    section: str,
+) -> int | None:
+    """驗證並略過目前 skill runtime 會使用、但不進 canonical record 的 section。"""
+
+    content_indent: int | None = None
+    index = start
+    seen_keys: set[str] = set()
+    while index < end:
+        line = lines[index]
+        if not line.strip():
+            index += 1
+            continue
+        if line.startswith("\t"):
+            return None
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            break
+        if content_indent is None:
+            content_indent = indent
+        if indent < content_indent:
+            return None
+        content = line[content_indent:]
+        if section == "allowed-tools":
+            if not content.startswith("- ") or not content[2:].strip():
+                return None
+        else:
+            nested_key, separator, nested_value = content.partition(":")
+            normalized_key = nested_key.strip()
+            if not separator or not normalized_key or normalized_key in seen_keys or not nested_value.strip():
+                return None
+            seen_keys.add(normalized_key)
+        index += 1
+    if content_indent is None:
+        return None
+    return index
 
 
 def _frontmatter_value(value: str) -> object:
