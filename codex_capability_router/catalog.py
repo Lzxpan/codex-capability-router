@@ -25,6 +25,10 @@ from .validation import record_from_mapping
 # 原始內容：route-only result 沒有 user-facing execution suppression 說明。
 # 修改原因：Phase 5E 必須清楚表達 selected 不等於 executed，且不把 internal support 混入 selected output。
 # 修改後功能：只在 execution_allowed=false 時加入簡短 route-only 說明，不新增 execution engine。
+# 修改紀錄（2026-08-19，Steve Peng）
+# 原始內容：empty selection 一律渲染成 no-safe-match，且沒有獨立 Router/controller presentation section。
+# 修改原因：Phase 5G-B 需要區分 native-model-sufficient 與 no-safe-match，並避免 controller 被誤顯示為 selected capability。
+# 修改後功能：加入 deterministic native-model message 與獨立 `Router / Controller` section；selected section 只讀 selected tuples。
 
 SUPPORTED_LANGUAGES = ("en", "zh-TW", "auto")
 
@@ -52,6 +56,7 @@ _LABELS = {
         "not_executable": "Not selected as an executable capability.",
         "not_automatic": "It will not be installed or executed automatically.",
         "no_safe_match": "No suitable installed and safely usable capability was found.",
+        "native_model_sufficient": "No downstream capability required. Native model is sufficient for this task.",
         "no_evidence": "No deterministic routing evidence was recorded.",
         "execution_suppressed": "Execution: not performed because this request is route-only.",
         "rejected": "Rejected Candidates",
@@ -86,6 +91,7 @@ _LABELS = {
         "not_executable": "尚未被選為可執行能力。",
         "not_automatic": "不會自動安裝，也不會自動執行。",
         "no_safe_match": "目前沒有找到符合條件且可安全使用的已安裝能力。",
+        "native_model_sufficient": "本次不需要額外下游能力，可直接使用基礎模型完成。",
         "no_evidence": "目前沒有記錄可稽核的路由證據。",
         "execution_suppressed": "執行：此請求為只路由模式，因此未執行。",
         "rejected": "拒絕候選",
@@ -158,6 +164,7 @@ def render_recommendations(
         "# Capability Recommendations" if locale == "en" else "# Capability 建議",
         "",
     ]
+    lines.extend(_render_controller_section(result))
     lines.extend(_render_selected_explanations(result, locale))
     if not result.execution_allowed:
         lines.extend(["", labels["execution_suppressed"]])
@@ -312,7 +319,12 @@ def _render_selected_explanations(result: RecommendationResult, locale: str) -> 
     )
     lines = [f"## {labels['selected_capabilities']}"]
     if not selected_pairs:
-        lines.append(f"- {labels['no_safe_match']}")
+        message = (
+            labels["native_model_sufficient"]
+            if result.outcome == "native_model_sufficient"
+            else labels["no_safe_match"]
+        )
+        lines.append(f"- {message}")
         return lines
 
     evidence_by_id = {item.capability_id: item for item in result.selection_evidence}
@@ -326,6 +338,18 @@ def _render_selected_explanations(result: RecommendationResult, locale: str) -> 
             *_render_selected_group(other_pairs, evidence_by_id, locale),
         ])
     return lines
+
+
+def _render_controller_section(result: RecommendationResult) -> list[str]:
+    """渲染 Router/controller identity；不把 controller 放入 selected capability section。"""
+
+    if not result.router_controller_ids:
+        return []
+    return [
+        "",
+        "## Router / Controller",
+        *(f"- `{controller_id}`" for controller_id in result.router_controller_ids),
+    ]
 
 
 def _render_selected_group(
@@ -425,6 +449,8 @@ def _reason_message(
             return "它是符合此任務類別的專門能力。"
         if code == "requirement_coverage":
             return f"它涵蓋符合的需求：{'、'.join(evidence.matched_requirements)}。"
+        if code == "action_requirement_coverage":
+            return f"它涵蓋指定動作：{'、'.join(evidence.matched_requirements)}。"
         if code == "installed_available":
             return "目前已安裝且可供選用。" if record.status.value == "installed" else "目前可用，作為可選能力。"
         if code == "workspace_specific":
@@ -444,6 +470,8 @@ def _reason_message(
         return "It is a specialist match for the task category."
     if code == "requirement_coverage":
         return f"It covers the matched requirement: {', '.join(evidence.matched_requirements)}."
+    if code == "action_requirement_coverage":
+        return f"It covers the requested action: {', '.join(evidence.matched_requirements)}."
     if code == "installed_available":
         return "It is installed and available for selection." if record.status.value == "installed" else "It is available for optional selection."
     if code == "workspace_specific":

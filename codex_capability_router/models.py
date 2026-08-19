@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import PurePosixPath, PureWindowsPath
 
 
 # 修改紀錄（2026-08-17，Steve Peng）
@@ -45,6 +46,33 @@ class CapabilityStatus(str, Enum):
     UNKNOWN = "unknown"
 
 
+_ACTION_REQUIREMENTS = frozenset(
+    {
+        "rewrite_text",
+        "generate_text",
+        "edit_spreadsheet",
+        "compose_image",
+        "verify_facts",
+        "debug_firmware",
+    }
+)
+_EXECUTION_CONSTRAINTS = frozenset(
+    {
+        "preserve_original",
+        "no_generative_redraw",
+        "no_invented_content",
+        "no_screen_content_modification",
+    }
+)
+_ROUTING_OUTCOMES = frozenset(
+    {
+        "downstream_selected",
+        "native_model_sufficient",
+        "no_safe_match",
+    }
+)
+
+
 @dataclass(frozen=True)
 class SelectionEvidence:
     """單一 capability 的 deterministic selection evidence，不包含隱藏推理。"""
@@ -54,6 +82,7 @@ class SelectionEvidence:
     reason_codes: tuple[str, ...] = ()
     matched_triggers: tuple[str, ...] = ()
     matched_requirements: tuple[str, ...] = ()
+    constraint_preserved: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -64,6 +93,14 @@ class RouterInput:
     capability_registry: tuple["CapabilityRecord", ...]
     requested_output_language: str | None = None
     execution_allowed: bool = True
+    # 修改紀錄（2026-08-19，Steve Peng）
+    # 原始內容：RouterInput 只有 task/category context 與 execution permission。
+    # 修改原因：Phase 5G-B 需要 bounded explicit request、action requirement 與 execution constraint，
+    # 且不得破壞既有四個 positional fields 的呼叫方式。
+    # 修改後功能：追加 immutable-friendly structured intent fields，並在信任邊界拒絕 path、raw frontmatter 與 secret-like values。
+    explicit_requests: tuple[str, ...] = ()
+    action_requirements: tuple[str, ...] = ()
+    execution_constraints: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """驗證信任邊界並固定 registry 順序容器，避免 route 改寫呼叫者資料。"""
@@ -79,6 +116,21 @@ class RouterInput:
             raise ValueError("requested_output_language must be a non-empty string or null")
         if not isinstance(self.execution_allowed, bool):
             raise ValueError("execution_allowed must be a boolean")
+        object.__setattr__(
+            self,
+            "explicit_requests",
+            _bounded_tokens(self.explicit_requests, "explicit_requests"),
+        )
+        object.__setattr__(
+            self,
+            "action_requirements",
+            _bounded_tokens(self.action_requirements, "action_requirements", _ACTION_REQUIREMENTS),
+        )
+        object.__setattr__(
+            self,
+            "execution_constraints",
+            _bounded_tokens(self.execution_constraints, "execution_constraints", _EXECUTION_CONSTRAINTS),
+        )
 
 
 @dataclass(frozen=True)
@@ -111,6 +163,14 @@ class RecommendationResult:
     recommendation_only: tuple["CapabilityRecord", ...] = ()
     selection_evidence: tuple[SelectionEvidence, ...] = ()
     execution_allowed: bool = True
+    # 修改紀錄（2026-08-19，Steve Peng）
+    # 原始內容：RecommendationResult 只有 selected/rejected/rationale 與 execution permission。
+    # 修改原因：Phase 5G-B 必須區分 downstream selected、native model sufficient 與 no safe match，
+    # 並保留 constraint 與 Router controller identity 給下游 renderer。
+    # 修改後功能：新增 bounded outcome、execution constraints 與獨立 controller presentation metadata；不把 rejected list 當 selected。
+    outcome: str = "no_safe_match"
+    execution_constraints: tuple[str, ...] = ()
+    router_controller_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """在資料邊界再次保護 hard selection limits，避免呼叫端傳出超額結果。"""
@@ -121,6 +181,18 @@ class RecommendationResult:
             raise ValueError("selected_optional cannot contain more than 2 capabilities")
         if not isinstance(self.execution_allowed, bool):
             raise ValueError("execution_allowed must be a boolean")
+        if self.outcome not in _ROUTING_OUTCOMES:
+            raise ValueError("outcome must be a supported routing outcome")
+        object.__setattr__(
+            self,
+            "execution_constraints",
+            _bounded_tokens(self.execution_constraints, "execution_constraints", _EXECUTION_CONSTRAINTS),
+        )
+        object.__setattr__(
+            self,
+            "router_controller_ids",
+            _bounded_tokens(self.router_controller_ids, "router_controller_ids"),
+        )
 
 
 @dataclass(frozen=True)
@@ -237,3 +309,33 @@ class DiscoveryResult:
 
         payload = [record.to_mapping() for record in self.records]
         return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _bounded_tokens(
+    value: object,
+    field: str,
+    allowed: frozenset[str] | None = None,
+) -> tuple[str, ...]:
+    """驗證並固定 bounded token tuple，拒絕 private path、frontmatter 與 secret-like input。"""
+
+    if isinstance(value, (str, bytes)) or not isinstance(value, (tuple, list)):
+        raise ValueError(f"{field} must be a sequence of strings")
+    if len(value) > 8:
+        raise ValueError(f"{field} cannot contain more than 8 values")
+
+    result: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"{field} must contain non-empty strings")
+        token = item.strip()
+        folded = token.casefold()
+        if len(token) > 128 or "/" in token or "\\" in token:
+            raise ValueError(f"{field} accepts canonical tokens only")
+        if "skill.md" in folded or any(marker in folded for marker in ("api_key=", "password=", "secret=", "token=")):
+            raise ValueError(f"{field} does not accept sensitive or raw metadata values")
+        if PureWindowsPath(token).is_absolute() or PurePosixPath(token).is_absolute():
+            raise ValueError(f"{field} does not accept absolute paths")
+        if allowed is not None and token not in allowed:
+            raise ValueError(f"{field} contains an unsupported canonical token")
+        result.append(token)
+    return tuple(result)

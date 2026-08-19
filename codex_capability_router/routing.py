@@ -32,6 +32,10 @@ from .registry import merge_capability_records
 # 原始內容：relevance/ranking 只消費固定 categories、preferred_for 與 triggers，description/provides 無法覆蓋非程式 artifact requirement。
 # 修改原因：Phase 5F 發現 capability 已被 discovery/normalization 保留，但 document/image/PDF task 會因 generic metadata 未參與 routing 而落空。
 # 修改後功能：以 record 的 description/provides 擴充 generic relevance、ranking 與 bounded selection evidence；source 不參與 role 判定。
+# 修改紀錄（2026-08-19，Steve Peng）
+# 原始內容：routing 只有 topic-based relevance，explicit request、action requirement 與 execution constraint 不會影響 hard gate 或結果語意。
+# 修改原因：Phase 5G-B 必須先排除 controller/unsafe/incompatible candidate，再依 explicit、action、trigger 與 specificity 排序。
+# 修改後功能：加入 bounded structured intent routing、native-model outcome、constraint pass-through 與獨立 controller identity；保留無 structured input 時的 topic fallback。
 
 _TASK_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -93,6 +97,7 @@ _CONTROLLER_ALIASES = frozenset(
         "capability router",
     }
 )
+_NATIVE_MODEL_ACTIONS = frozenset({"rewrite_text", "generate_text"})
 
 
 def classify_task(user_task: str) -> tuple[str, ...]:
@@ -119,28 +124,48 @@ def route(request: RouterInput) -> RecommendationResult:
     rejected: list[RejectedCandidate] = []
     relevant: list[CapabilityRecord] = []
     recommendation_only: list[CapabilityRecord] = []
+    router_controller_ids: list[str] = []
 
     for record in registry:
+        explicit_match = _matches_explicit_request(record, request.explicit_requests)
+        topic_relevant = _is_relevant(record, task, task_categories)
         if _is_controller(record):
+            router_controller_ids.append(record.id)
             rejected.append(_rejected(record, "self-routing protection"))
             continue
         if record.routing_support:
             # ponytail: internal support 完全不進 output；需要獨立 support trace 時才新增 routing_support section。
             continue
         if record.status == CapabilityStatus.UNKNOWN:
-            if record.recommendation_only and _trusted_recommendation_source(record.source) and _is_relevant(record, task, task_categories):
+            if record.recommendation_only and _trusted_recommendation_source(record.source) and (
+                explicit_match or topic_relevant or _is_relevant(record, task, task_categories, request.action_requirements)
+            ):
                 recommendation_only.append(record)
-            else:
+            elif explicit_match or topic_relevant:
                 rejected.append(_rejected(record, "unknown capability"))
             continue
-        if not _is_relevant(record, task, task_categories):
-            continue
         if record.status == CapabilityStatus.UNAVAILABLE:
-            rejected.append(_rejected(record, "unavailable"))
+            if explicit_match or topic_relevant:
+                rejected.append(_rejected(record, "unavailable"))
+            continue
+        if not _action_compatible(record, request.action_requirements):
+            if explicit_match or topic_relevant:
+                rejected.append(_rejected(record, "action incompatibility"))
+            continue
+        if not explicit_match and not _is_relevant(record, task, task_categories, request.action_requirements):
             continue
         relevant.append(record)
 
-    ranked = sorted(relevant, key=lambda record: _ranking_key(record, task, task_categories))
+    ranked = sorted(
+        relevant,
+        key=lambda record: _ranking_key(
+            record,
+            task,
+            task_categories,
+            request.explicit_requests,
+            request.action_requirements,
+        ),
+    )
     winners: list[CapabilityRecord] = []
     overlap_winners: dict[str, CapabilityRecord] = {}
     for record in ranked:
@@ -165,19 +190,52 @@ def route(request: RouterInput) -> RecommendationResult:
         rejected.append(_rejected(record, reason))
 
     rejected.sort(key=lambda item: (item.id.casefold(), item.id, item.reason))
-    recommendation_only.sort(key=lambda record: _ranking_key(record, task, task_categories))
+    recommendation_only.sort(
+        key=lambda record: _ranking_key(
+            record,
+            task,
+            task_categories,
+            request.explicit_requests,
+            request.action_requirements,
+        )
+    )
     recommendation_records = tuple(recommendation_only)
+    outcome = _routing_outcome(request, primary, optional, recommendation_records)
     selection_evidence = tuple(
-        _selection_evidence(record, _PRIMARY_LEVEL, task, task_categories)
+        _selection_evidence(
+            record,
+            _PRIMARY_LEVEL,
+            task,
+            task_categories,
+            request.explicit_requests,
+            request.action_requirements,
+            request.execution_constraints,
+        )
         for record in primary
     ) + tuple(
-        _selection_evidence(record, _OPTIONAL_LEVEL, task, task_categories)
+        _selection_evidence(
+            record,
+            _OPTIONAL_LEVEL,
+            task,
+            task_categories,
+            request.explicit_requests,
+            request.action_requirements,
+            request.execution_constraints,
+        )
         for record in optional
     ) + tuple(
-        _selection_evidence(record, _RECOMMENDATION_ONLY_LEVEL, task, task_categories)
+        _selection_evidence(
+            record,
+            _RECOMMENDATION_ONLY_LEVEL,
+            task,
+            task_categories,
+            request.explicit_requests,
+            request.action_requirements,
+            request.execution_constraints,
+        )
         for record in recommendation_records
     )
-    rationale = _rationale(request, task_categories, primary, optional, recommendation_records)
+    rationale = _rationale(request, task_categories, primary, optional, recommendation_records, outcome)
     return RecommendationResult(
         primary,
         optional,
@@ -186,6 +244,9 @@ def route(request: RouterInput) -> RecommendationResult:
         recommendation_records,
         selection_evidence,
         execution_allowed=request.execution_allowed,
+        outcome=outcome,
+        execution_constraints=request.execution_constraints,
+        router_controller_ids=tuple(sorted(router_controller_ids, key=lambda value: (value.casefold(), value))),
     )
 
 
@@ -219,8 +280,16 @@ def _is_controller(record: CapabilityRecord) -> bool:
     return any(_normalize(value) in _CONTROLLER_ALIASES for value in identifiers)
 
 
-def _is_relevant(record: CapabilityRecord, task: str, task_categories: tuple[str, ...]) -> bool:
+def _is_relevant(
+    record: CapabilityRecord,
+    task: str,
+    task_categories: tuple[str, ...],
+    action_requirements: tuple[str, ...] = (),
+) -> bool:
     """只保留類別、preferred_for 或非 broad trigger 真正命中的候選。"""
+
+    if action_requirements:
+        return _action_compatible(record, action_requirements)
 
     normalized_categories = {_normalize(value) for value in record.categories}
     normalized_preferred = {_normalize(value) for value in record.preferred_for}
@@ -242,14 +311,19 @@ def _ranking_key(
     record: CapabilityRecord,
     task: str,
     task_categories: tuple[str, ...],
-) -> tuple[int, int, int, int, int, int, str, str]:
-    """建立固定排序 tuple：exact、specialist、installed、preferred、evidence、priority、id。"""
+    explicit_requests: tuple[str, ...] = (),
+    action_requirements: tuple[str, ...] = (),
+) -> tuple[int, int, int, int, int, int, int, int, int, str, str]:
+    """依 explicit、action、trigger、specificity、availability、preferred、priority、ID 固定排序。"""
 
+    explicit = int(_matches_explicit_request(record, explicit_requests))
+    action_coverage = len(_action_coverage(record, action_requirements))
     exact = int(
         any(_phrase_in_text(task, value) for value in (*record.triggers, *record.provides))
     )
     specialist = int(not _is_generic(record))
-    installed = int(record.status == CapabilityStatus.INSTALLED)
+    workspace_specific = int(record.source.casefold().startswith(("skill-root", "explicit-skill-root")))
+    available = int(record.status == CapabilityStatus.INSTALLED)
     preferred = int(
         any(
             _normalize(value) in {_normalize(category) for category in task_categories}
@@ -262,7 +336,19 @@ def _ranking_key(
         for value in (*record.categories, *record.triggers, *record.provides)
         if _normalize(value) not in _BROAD_TERMS
     )
-    return (-exact, -specialist, -installed, -preferred, -evidence, -record.priority, record.id.casefold(), record.id)
+    return (
+        -explicit,
+        -action_coverage,
+        -exact,
+        -specialist,
+        -workspace_specific,
+        -available,
+        -preferred,
+        -evidence,
+        -record.priority,
+        record.id.casefold(),
+        record.id,
+    )
 
 
 def _is_generic(record: CapabilityRecord) -> bool:
@@ -277,6 +363,9 @@ def _selection_evidence(
     selection_level: str,
     task: str,
     task_categories: tuple[str, ...],
+    explicit_requests: tuple[str, ...] = (),
+    action_requirements: tuple[str, ...] = (),
+    execution_constraints: tuple[str, ...] = (),
 ) -> SelectionEvidence:
     """由既有 match evidence 建立 bounded reason codes，不建立 scoring 或 reasoning trace。"""
 
@@ -288,13 +377,16 @@ def _selection_evidence(
     )
     matched_requirements = _unique_text(
         value
-        for value in (*record.preferred_for, *record.categories, *matched_provides)
+        for value in (*action_requirements, *record.preferred_for, *record.categories, *matched_provides)
         if _normalize(value) in task_categories
+        or value in action_requirements
         or value in matched_provides
     )
     reason_codes: list[str] = []
-    if _phrase_in_text(task, record.id) or _phrase_in_text(task, record.name):
+    if _matches_explicit_request(record, explicit_requests) or _phrase_in_text(task, record.id) or _phrase_in_text(task, record.name):
         reason_codes.append("explicit_request")
+    if _action_coverage(record, action_requirements):
+        reason_codes.append("action_requirement_coverage")
     if matched_triggers:
         reason_codes.append("exact_trigger_match")
     if matched_provides:
@@ -319,6 +411,7 @@ def _selection_evidence(
         reason_codes=tuple(reason_codes),
         matched_triggers=matched_triggers,
         matched_requirements=matched_requirements,
+        constraint_preserved=execution_constraints,
     )
 
 
@@ -341,12 +434,15 @@ def _rationale(
     primary: tuple[CapabilityRecord, ...],
     optional: tuple[CapabilityRecord, ...],
     recommendation_only: tuple[CapabilityRecord, ...] = (),
+    outcome: str = "no_safe_match",
 ) -> str:
     """產生短且可追溯的 rationale，包含 task category、選擇與 provenance。"""
 
     category_text = ", ".join(task_categories) if task_categories else "no classified category"
     selected = primary + optional
     if not selected and not recommendation_only:
+        if outcome == "native_model_sufficient":
+            return "Native model is sufficient for this task."
         return f"No suitable capability matched task category: {category_text}."
     evidence = ", ".join(
         f"{record.id} ({record.status.value}, source={record.source})" for record in selected
@@ -355,6 +451,46 @@ def _rationale(
         advisory = ", ".join(record.id for record in recommendation_only)
         evidence = f"{evidence}; recommendation-only: {advisory}" if evidence else f"recommendation-only: {advisory}"
     return f"Matched task category: {category_text}; selected: {evidence}."
+
+
+def _matches_explicit_request(record: CapabilityRecord, explicit_requests: tuple[str, ...]) -> bool:
+    """以 canonical ID/name/alias 比對 explicit request，不讀取 private metadata。"""
+
+    requested = {_normalize(value) for value in explicit_requests}
+    return bool(requested & {_normalize(value) for value in (record.id, record.name, *record.aliases)})
+
+
+def _action_coverage(record: CapabilityRecord, action_requirements: tuple[str, ...]) -> tuple[str, ...]:
+    """只以 record.provides 的 exact canonical token 計算 action coverage。"""
+
+    provided = {_normalize(value) for value in record.provides}
+    return tuple(action for action in action_requirements if _normalize(action) in provided)
+
+
+def _action_compatible(record: CapabilityRecord, action_requirements: tuple[str, ...]) -> bool:
+    """確認 capability 覆蓋全部 bounded action requirements；沒有 action 時保留 topic fallback。"""
+
+    return not action_requirements or len(_action_coverage(record, action_requirements)) == len(action_requirements)
+
+
+def _routing_outcome(
+    request: RouterInput,
+    primary: tuple[CapabilityRecord, ...],
+    optional: tuple[CapabilityRecord, ...],
+    recommendation_only: tuple[CapabilityRecord, ...],
+) -> str:
+    """將空選擇區分為 native-model sufficient 與 no-safe-match。"""
+
+    if primary or optional:
+        return "downstream_selected"
+    if (
+        not request.explicit_requests
+        and not recommendation_only
+        and request.action_requirements
+        and set(request.action_requirements) <= _NATIVE_MODEL_ACTIONS
+    ):
+        return "native_model_sufficient"
+    return "no_safe_match"
 
 
 def _normalize(value: str) -> str:

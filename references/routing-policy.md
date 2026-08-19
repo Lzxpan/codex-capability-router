@@ -5,6 +5,8 @@
 - `selected_primary`：最多 3 筆 `installed` capability。
 - `selected_optional`：最多 2 筆 `available` capability。
 - `recommendation_only`：只放明確標記的 trusted `unknown` advisory record；不等於 selected，也不代表可執行。
+- `outcome`：固定為 `downstream_selected`、`native_model_sufficient` 或 `no_safe_match`；空 selected 不自動等於 native model sufficient。
+- `execution_constraints`：保留 caller 的 bounded constraints，供 downstream executor/renderer 傳遞；不宣稱已實際執行。
 - `rejected_candidates`：保留 self-routing、unavailable、unknown、overlap 與 selection-limit 原因。
 - `selection_evidence`：保留 selected/recommendation-only capability 的 level、reason codes、matched triggers 與 matched requirements，供雙語 explanation renderer 使用。
 
@@ -17,6 +19,21 @@ Router 是 advisory-only；不執行命令、載入 Plugin、安裝 capability�
 3. `unknown` 永遠不能進 `selected_primary`、`selected_optional` 或 normal recommendation。
 4. `unknown` 只有在 `source` 為 trusted runtime/manual，且輸入明確有 `recommendation_only=true` 時，才能進 `recommendation_only`。
 5. 未找到可信候選時回傳空 selected tuple 與 `no_match` rationale，不湊數。
+
+## Structured intent
+
+- `explicit_requests` 只接受 bounded canonical capability ID/alias；不保存 private absolute path、`SKILL.md` path、raw frontmatter 或 secret-like values。
+- `action_requirements` 支援 bounded canonical tokens：`rewrite_text`、`generate_text`、`edit_spreadsheet`、`compose_image`，必要時可使用 `verify_facts`、`debug_firmware`。
+- `execution_constraints` 支援 `preserve_original`、`no_generative_redraw`、`no_invented_content` 與 `no_screen_content_modification`。
+- hard gates 先排除 controller、routing support、unavailable、unknown 與 action-incompatible records；explicit request 不得繞過安全規則。
+- 通過 hard gates 後，排序優先順序為 explicit request、action coverage、exact trigger、specialist/workspace specificity、availability、preferred_for、priority、stable ID。Topic vocabulary 只作 fallback/context evidence。
+- `rewrite_text`/`generate_text` 在沒有 explicit downstream request 且沒有相容下游能力時，可回傳 `native_model_sufficient`；不可用 explicit capability 則回傳 `no_safe_match`。
+
+## Presentation contract
+
+- `## Router / Controller` 只顯示 `router_controller_ids`。
+- Selected section 只讀 `selected_primary` 與 `selected_optional`；不得從 `rejected_candidates`、controller 或 routing support 推導 selected。
+- Previous selected capability 不會自動成為 next-task mandatory capability；external handoff integration 留待後續 audit。
 
 ## 排序與界線
 
