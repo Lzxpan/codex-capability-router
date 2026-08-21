@@ -2,6 +2,34 @@
 
 All notable changes to `codex-capability-router` are documented here.
 
+## v0.1.0-beta.3
+
+Third public beta release, focused on semantic Codex-driven Skill selection and
+the Phase 0-5 selection contract.
+
+### Added and validated
+
+- Codex's main model now makes final Skill Selection from task meaning after
+  candidate preparation and full `SKILL.md` applicability validation.
+- Added runtime Skill inventory refresh, cache fingerprints, Basic/Enriched
+  Profiles, recall-first Candidate Retrieval, and explicit Skill inclusion.
+- Added bounded full-instruction handoff, at most one Expanded Retrieval, at
+  most one Correction, and `selected` / `no_matching_skill` output validation.
+- Removed keyword/category/provides final-selection semantics, PRIMARY/OPTIONAL
+  output, the 3+2 production limit, legacy fallback, and silent fallback.
+- New or updated Skills no longer require a Router production mapping.
+- The full regression suite passes **81/81** tests and Phase 5 Full Live
+  Acceptance passes all five cases. Compileall, UTF-8/U+FFFD, diff, and
+  production-source checks also pass.
+
+### Known limitation
+
+Runtime discovery reports 139 malformed Skill diagnostics. This is a
+non-blocking observation and is not changed in beta.3. Measured runtime token
+usage also remains unavailable; the existing `estimated-static` Plugin Eval
+value is not measured runtime consumption and remains a stable-release
+requirement.
+
 ## v0.1.0-beta.2
 
 Second public beta release, focused on route-only selection semantics and

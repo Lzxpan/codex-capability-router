@@ -1,15 +1,17 @@
 # Codex Capability Router
 
-版本：`v0.1.0-beta.2`
+版本：`v0.1.0-beta.3`
 狀態：**Beta / Pre-release（公開測試版）**
 
-Codex Capability Router v0.1.0-beta.2 是 local-first、context-first、read-only 的 capability
-recommendation skill，提供有界 local discovery、deterministic routing 與雙語輸出。
+Codex Capability Router v0.1.0-beta.3 是 local-first、context-first、read-only 的
+capability recommendation skill，提供有界 runtime discovery、profile-based candidate
+retrieval、由 Codex 協助的 final Skill selection 與雙語輸出。
 
-本版本已通過 deterministic functional validation suite：**46/46 tests
-pass**，包含 12 個 routing scenarios（`zh-TW` 6 個、`en` 6 個）。Plugin Eval
-目前回報較高的 static deferred-context estimate；該估計包含 repository
-artifacts，並不是 measured runtime token consumption。正式升級為 stable
+本版本已通過完整 regression suite：**81/81 tests pass**，且 Phase 5 Full Live
+Acceptance 五個案例全部 PASS。compile、UTF-8/U+FFFD、diff 與 production source
+check 也全部通過。Canonical routing fixture 仍為 12 個 scenarios（`zh-TW` 6 個、
+`en` 6 個）。Plugin Eval 目前回報 static deferred-context estimate；該估計包含
+repository artifacts，並不是 measured runtime token consumption。正式升級為 stable
 `v0.1.0` 前，仍必須取得 empirical runtime token measurement。
 
 另有一個獨立 STM32G0 firmware workspace 已完成 real-world local acceptance，
@@ -19,11 +21,12 @@ HARDWARE_PENDING 的 evidence boundaries。私有專案細節刻意不公開。
 
 ## 目前 v0.1.0 邊界
 
-目前實作只接受呼叫端提供的 skill roots、manual inventory、canonical registry
-records 與 user task。系統會驗證 records、執行 deterministic advisory routing，
-並輸出 `en` 或 `zh-TW` catalog/recommendation。不執行 capability、不安裝或管理
-Plugin、不掃描未指定路徑、不使用 network discovery、不存取 Marketplace、不變更
-permission，也不持久化 private inventory。
+目前實作接受 runtime 可見的 inventory、核准的 skill roots、canonical registry
+records 與 user task。系統會驗證 records、建立 inventory fingerprint 與
+Basic/Enriched Profile、執行 recall-first candidate retrieval，並在輸出前驗證
+Codex 的 final Skill selection。不執行 capability、不安裝或管理 Plugin、不掃描未
+指定路徑、不使用 network discovery、不存取 Marketplace、不變更 permission，也不
+持久化 private inventory。
 
 本階段不儲存或輸出 private capability inventory、帳戶資料、credentials、
 secrets 或不必要的 personal absolute paths。
@@ -41,9 +44,13 @@ registry 與可解釋的 advisory recommendations。
 - 正規化 records、依穩定 identifier 去除重複，並保留 provenance、confidence、
   evidence 與 conflicts。
 - 套用 runtime > CLI > explicit skill root > manual 的來源優先順序。
-- 產生 deterministic 的主要/可選建議，以及 `en` 或 `zh-TW` catalog/output。
-- 新增簡潔的已選能力說明，顯示 capability 類型、PRIMARY/OPTIONAL 層級、registry
-  提供的 Function metadata，以及由 deterministic reason codes 產生的使用者可讀理由。
+- 建立 Basic/Enriched Profile，從目前 runtime inventory 執行 recall-first candidate
+  retrieval；符合資格的 explicit Skill request 也會納入候選。
+- 對 Codex 初選 Skill 完整讀取 `SKILL.md`，再執行 final applicability check；expanded
+  retrieval 與 correction 各自有界且最多一次。
+- 由 Codex 根據工作語意決定 final Skill。新版 contract 只包含 `selected_skills` 與
+  `selection_status`（`selected` 或 `no_matching_skill`），不再有 keyword-to-Skill
+  mapping、PRIMARY/OPTIONAL output 或 3+2 limit。
 
 ## Skill 不會做什麼
 
@@ -85,25 +92,30 @@ Runtime registry 是 canonical 且以單次 runtime 為範圍，只存在於目�
 `docs/CATALOG.en.md` 與 `docs/CATALOG.zh-TW.md`。
 
 可選的雙語 Function metadata 使用 registry 的 `function` object，包含 `en` 與
-`zh-TW` 值。Machine-readable route output 保留 `selection_evidence`，包含 capability
-ID、selection level、reason codes 與 matched evidence。
+`zh-TW` 值。Machine-readable selection output 包含 `task_summary`、帶有簡短理由的
+`selected_skills` 與 `selection_status`，不輸出 PRIMARY/OPTIONAL level 或
+recommendation-only final-selection semantics。
 
 ## Routing 行為
 
-Routing 是 deterministic 且 advisory-only。它排除 `unavailable` 與一般 `unknown`，
-防止 Router 自我路由，最多保留 3 個 installed primary 與 2 個 available optional
-recommendations，並回報 rationale 與 rejected-candidate provenance。只有 trusted 且
-明確標記的 `unknown` 才能出現在獨立的 recommendation-only 區段。
+Routing 是 advisory-only。Discovery、normalization、availability filtering、profile
+建立與 candidate retrieval 先準備 context；再由 Codex 主模型根據工作語意決定 final
+Skill selection。只有確實 discovered、available 且通過完整 `SKILL.md` applicability
+check 的 Skill 才能被選取。空結果回報 `no_matching_skill`，不等同
+`native_model_sufficient`，也不加入 legacy 或 silent fallback。
+
+Keyword、category 與 `provides` 可以協助 candidate retrieval，但不決定 final Skill ID。
+正式 output 不再有 PRIMARY/OPTIONAL semantics，也沒有固定 3+2 selection limit。新增或
+更新 Skill 不需要修改 Router production mapping。Expanded Retrieval 最多一次，
+selection correction 最多一次。
 
 Router controller 本身，以及標記為 internal routing support 的 records，永久排除於
 downstream task selection。route-only mode 仍會選出 target-task capabilities，並以
 `execution_allowed=false` 抑制執行；選擇不等於執行 capability。
 
-Routing 完成後，human-readable output 會包含「已選能力」，若有 skill 則另外顯示
-「已選技能」。每筆會顯示名稱、類型、選擇層級、功能與選用理由；理由只來自既有
-trigger match、requirement coverage、specialist match、availability 或 optional coverage
-等 routing evidence。缺少 Function metadata 時會使用明確 fallback，不會從 category
-自行推測功能。
+Routing 完成後，human-readable output 會包含已選 Skill ID 與簡短 Codex selection reason，
+或明確的空結果與 `no_matching_skill`。Selection 不會執行 Skill；Router controller 與
+標記為 internal routing support 的 records 仍排除於 downstream task selection。
 
 ## 安全與隱私模型
 
@@ -114,9 +126,10 @@ absolute paths 或 private Plugin inventory。
 
 ## 已知限制與 v0.1 scope
 
-Beta scope 包含 read-only local discovery、canonical registry merge、deterministic
-routing、provenance/conflict handling、雙語 catalog 與 bounded validation。固定驗證
-集合恰好是 12 個 scenarios：`zh-TW` 6 個、`en` 6 個。
+Beta scope 包含 read-only runtime discovery、canonical registry merge、inventory/profile
+cache、recall-first retrieval、Codex Skill selection、完整 applicability validation、
+雙語 output 與 bounded validation。Canonical fixture 包含 12 個 scenarios：`zh-TW` 6 個、
+`en` 6 個；完整 suite 包含 81 個 tests，Phase 5 Full Live Acceptance 包含五個案例。
 
 Plugin Eval 回報 estimated-static deferred context cost。這不是 measured runtime
 token usage；repository documentation、tests、fixtures 與 implementation artifacts
@@ -130,27 +143,20 @@ deployment、MCP hosting 與 automatic routing-policy learning。
 
 ## 使用範例
 
-在 repository root 執行 deterministic suite，並從同一份 registry 重新產生雙語 catalog：
+在 repository root 執行完整 suite，並從同一份 registry 重新產生雙語 catalog：
 
 ```powershell
 python -m unittest discover -s tests -v
 python -m codex_capability_router.catalog --input tests/fixtures/routing_registry.json --output docs
 ```
 
-例如任務為「請修正 React 元件的介面錯誤」時，說明會包含：
+例如任務為「請修正 React 元件的介面錯誤」時，selection output 會包含：
 
 ```text
-## 已選能力
-### 已選技能
-#### PRIMARY
-- 名稱：React UI Debugging
-  類型：skill
-  選擇層級：PRIMARY
-  功能：診斷 React 介面回歸問題。
-  選用理由：任務符合觸發詞：react、component、ui、bug。 它是符合此任務類別的專門能力。
+{"selected_skills":[{"id":"react-ui-debugging","reason":"Codex 判定此 Skill 適用於 UI debugging 工作。"}],"selection_status":"selected"}
 ```
 
-理由由 deterministic routing evidence 渲染，不是 hidden reasoning trace。
+理由是簡短且可稽核的 selection explanation，不是 hidden reasoning trace。
 
 ## Stable release requirement
 
@@ -179,8 +185,12 @@ examples/
 
 ## Phase 5 證據邊界
 
-有界評估固定包含十二個 routing cases。Local software tests 不證明硬體、實體
+Canonical fixture 包含十二個 routing cases；完整 Python regression 包含 81 個 tests，
+Full Live Acceptance 包含五個 runtime cases。Local software tests 不證明硬體、實體
 water-path、外部 capability 或生物效能驗收。
+
+目前 runtime discovery 回報 139 個 malformed Skill diagnostics。這是記錄中的
+non-blocking observation；beta.3 不因 release preparation 擴張 discovery scope 修正它。
 
 ## Real-world local acceptance
 
@@ -217,4 +227,8 @@ Marketplace submission。
 原始內容：README 仍標示 beta.1/42 tests，且未記錄 Phase 5E/5E-R 的 route-only 與 STM32G0 acceptance 結果。
 修改原因：同步 beta.2 公開文件與已驗證的路由排除、execution suppression、46/46 deterministic suite 及 real-world evidence。
 修改後功能：讀者可辨識目前 beta.2 行為、已選能力說明、recommendation-only 分離、無自動安裝/權限變更與公開驗收邊界。
+修改紀錄（2026-08-21，Steve Peng）
+原始內容：README 仍描述 beta.2 的固定 primary/optional routing 與 46/46 suite。
+修改原因：同步 beta.3 的 Codex final Skill selection contract、81/81 regression 與 Phase 5 Full Live Acceptance。
+修改後功能：文件反映 inventory/profile、recall-first retrieval、完整 SKILL.md applicability、兩種 selection status、無 legacy/silent fallback，以及 139 malformed diagnostics 的 non-blocking 邊界。
 -->
