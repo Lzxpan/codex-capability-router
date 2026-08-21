@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import json
 from pathlib import Path
 
-from .models import CapabilityRecord, RecommendationResult, SelectionEvidence
+from .models import CapabilityRecord
+from .selection import validate_selection
 from .validation import record_from_mapping
 
 
@@ -29,6 +30,10 @@ from .validation import record_from_mapping
 # 原始內容：empty selection 一律渲染成 no-safe-match，且沒有獨立 Router/controller presentation section。
 # 修改原因：Phase 5G-B 需要區分 native-model-sufficient 與 no-safe-match，並避免 controller 被誤顯示為 selected capability。
 # 修改後功能：加入 deterministic native-model message 與獨立 `Router / Controller` section；selected section 只讀 selected tuples。
+# 修改紀錄（2026-08-21，Steve Peng）
+# 原始內容：render_recommendations 仍可接收舊 RecommendationResult，且私有 renderer 保留 PRIMARY/OPTIONAL 與舊 outcome。
+# 修改原因：v2.1 Phase 4 要求新版 selection contract 成為唯一 production output，不得由舊 renderer 影響正式結果。
+# 修改後功能：render_recommendations 只接受並驗證 selected/no_matching_skill payload；移除未被入口使用的舊 selection renderer，catalog metadata 產生仍保留。
 
 SUPPORTED_LANGUAGES = ("en", "zh-TW", "auto")
 
@@ -43,30 +48,6 @@ _LABELS = {
         "avoid_when": "Avoid When",
         "overlap": "Overlap Group",
         "priority": "Priority",
-        "primary": "Primary",
-        "optional": "Optional",
-        "selected_capabilities": "Selected Capabilities",
-        "selected_skills": "Selected Skills",
-        "other_selected_capabilities": "Other Selected Capabilities",
-        "selection_level": "Selection level",
-        "function": "Function",
-        "why_selected": "Why selected",
-        "why_considered": "Why considered",
-        "recommendation_only": "Recommended but not selected",
-        "not_executable": "Not selected as an executable capability.",
-        "not_automatic": "It will not be installed or executed automatically.",
-        "no_safe_match": "No suitable installed and safely usable capability was found.",
-        "native_model_sufficient": "No downstream capability required. Native model is sufficient for this task.",
-        "no_evidence": "No deterministic routing evidence was recorded.",
-        "execution_suppressed": "Execution: not performed because this request is route-only.",
-        "rejected": "Rejected Candidates",
-        "rationale": "Rationale",
-        "no_recommendation": "No recommendation available.",
-        "matched": "Matched categories",
-        "selected": "selected",
-        "unavailable": "Unavailable",
-        "redundant": "Redundant overlap group",
-        "self_routing": "Self-routing protection",
     },
     "zh-TW": {
         "name": "名稱",
@@ -78,30 +59,6 @@ _LABELS = {
         "avoid_when": "避免時機",
         "overlap": "重疊群組",
         "priority": "優先級",
-        "primary": "主要建議",
-        "optional": "可選建議",
-        "selected_capabilities": "已選能力",
-        "selected_skills": "已選技能",
-        "other_selected_capabilities": "其他已選能力",
-        "selection_level": "選擇層級",
-        "function": "功能",
-        "why_selected": "選用理由",
-        "why_considered": "考慮理由",
-        "recommendation_only": "建議但未選用",
-        "not_executable": "尚未被選為可執行能力。",
-        "not_automatic": "不會自動安裝，也不會自動執行。",
-        "no_safe_match": "目前沒有找到符合條件且可安全使用的已安裝能力。",
-        "native_model_sufficient": "本次不需要額外下游能力，可直接使用基礎模型完成。",
-        "no_evidence": "目前沒有記錄可稽核的路由證據。",
-        "execution_suppressed": "執行：此請求為只路由模式，因此未執行。",
-        "rejected": "拒絕候選",
-        "rationale": "理由",
-        "no_recommendation": "目前沒有可用的建議。",
-        "matched": "符合類別",
-        "selected": "選擇",
-        "unavailable": "無法使用",
-        "redundant": "重疊群組中的冗餘候選",
-        "self_routing": "防止 Router 自我路由",
     },
 }
 
@@ -150,61 +107,30 @@ def generate_catalog(registry: Sequence[CapabilityRecord]) -> CatalogBundle:
 
 
 def render_recommendations(
-    result: RecommendationResult,
+    payload: Mapping[str, object],
     *,
     language: str = "en",
     user_request: str = "",
 ) -> str:
-    """渲染 Router recommendation；auto 依 user request 判斷語言，無法判定時用英文。"""
+    """渲染新版 selected_skills/status；不從 metadata 重算或補入 Skill。"""
 
     locale = resolve_language(language, user_request)
-    labels = _LABELS[locale]
-    selected = result.selected_primary + result.selected_optional
-    lines = [
-        "# Capability Recommendations" if locale == "en" else "# Capability 建議",
-        "",
-    ]
-    lines.extend(_render_controller_section(result))
-    lines.extend(_render_selected_explanations(result, locale))
-    if not result.execution_allowed:
-        lines.extend(["", labels["execution_suppressed"]])
-    lines.extend([
-        "",
-        f"## {labels['primary']}",
-    ])
-    if result.selected_primary:
-        lines.extend(_recommendation_lines(result.selected_primary))
-    else:
-        lines.append(f"- {labels['no_recommendation']}")
-
-    lines.extend(["", f"## {labels['optional']}"])
-    if result.selected_optional:
-        lines.extend(_recommendation_lines(result.selected_optional))
-    else:
-        lines.append("- None" if locale == "en" else "- 無")
-
-    if result.recommendation_only:
-        lines.extend(["", f"## {labels['recommendation_only']}"])
-        lines.extend(_render_recommendation_only_lines(result, locale))
-
-    if result.rejected_candidates:
-        lines.extend(["", f"## {labels['rejected']}"])
-        lines.extend(
-            f"- `{candidate.id}` — {_localized_rejection(candidate.reason, locale)}"
-            f" (source: {candidate.source or 'unknown'}; provenance: {', '.join(candidate.provenance) or 'none'})"
-            for candidate in result.rejected_candidates
-        )
-
-    lines.extend(["", f"{labels['rationale']}：" if locale == "zh-TW" else f"{labels['rationale']}: "])
-    if selected:
-        categories = _display_categories(selected, locale)
-        ids = ", ".join(record.id for record in selected)
-        if locale == "en":
-            lines.append(f"{labels['matched']}: {categories}; {labels['selected']}: {ids}.")
+    validated = validate_selection(payload)
+    selected = validated["selected_skills"]
+    if locale == "en":
+        lines = ["# Skill Selection", "", f"Task: {validated['task_summary']}", "", "## Selected Skills"]
+        if selected:
+            lines.extend(f"- `{item['id']}` — {item['reason']}" for item in selected)
         else:
-            lines.append(f"{labels['matched']}：{categories}；{labels['selected']}：{ids}。")
+            lines.append("- No matching skill.")
+        lines.extend(["", f"Selection status: `{validated['selection_status']}`"])
     else:
-        lines.append(labels["no_recommendation"])
+        lines = ["# Skill 選擇", "", f"任務：{validated['task_summary']}", "", "## 已選技能"]
+        if selected:
+            lines.extend(f"- `{item['id']}` — {item['reason']}" for item in selected)
+        else:
+            lines.append("- 沒有符合的 Skill。")
+        lines.extend(["", f"選擇狀態：`{validated['selection_status']}`"])
     return "\n".join(lines) + "\n"
 
 
@@ -294,117 +220,6 @@ def _render_catalog(records: Sequence[CapabilityRecord], locale: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _recommendation_lines(records: Sequence[CapabilityRecord]) -> list[str]:
-    """輸出 recommendation 的 ID/name/status 與 bounded provenance metadata。"""
-
-    lines: list[str] = []
-    for record in records:
-        provenance = ", ".join(record.provenance) or record.source
-        details = f"status: {record.status.value}; source: {record.source}; provenance: {provenance}"
-        if record.confidence is not None:
-            details += f"; confidence: {record.confidence:g}"
-        if record.conflicts:
-            details += f"; conflicts: {', '.join(record.conflicts)}"
-        lines.append(f"- `{record.id}` — {record.name} ({details})")
-    return lines
-
-
-def _render_selected_explanations(result: RecommendationResult, locale: str) -> list[str]:
-    """渲染 selected capability explanation，依 kind 與 PRIMARY/OPTIONAL 分組。"""
-
-    labels = _LABELS[locale]
-    selected_pairs = tuple(
-        [(record, "PRIMARY") for record in result.selected_primary]
-        + [(record, "OPTIONAL") for record in result.selected_optional]
-    )
-    lines = [f"## {labels['selected_capabilities']}"]
-    if not selected_pairs:
-        message = (
-            labels["native_model_sufficient"]
-            if result.outcome == "native_model_sufficient"
-            else labels["no_safe_match"]
-        )
-        lines.append(f"- {message}")
-        return lines
-
-    evidence_by_id = {item.capability_id: item for item in result.selection_evidence}
-    skill_pairs = tuple(pair for pair in selected_pairs if pair[0].kind.value == "skill")
-    other_pairs = tuple(pair for pair in selected_pairs if pair[0].kind.value != "skill")
-    if skill_pairs:
-        lines.extend([f"### {labels['selected_skills']}", *_render_selected_group(skill_pairs, evidence_by_id, locale)])
-    if other_pairs:
-        lines.extend([
-            f"### {labels['other_selected_capabilities']}",
-            *_render_selected_group(other_pairs, evidence_by_id, locale),
-        ])
-    return lines
-
-
-def _render_controller_section(result: RecommendationResult) -> list[str]:
-    """渲染 Router/controller identity；不把 controller 放入 selected capability section。"""
-
-    if not result.router_controller_ids:
-        return []
-    return [
-        "",
-        "## Router / Controller",
-        *(f"- `{controller_id}`" for controller_id in result.router_controller_ids),
-    ]
-
-
-def _render_selected_group(
-    pairs: Sequence[tuple[CapabilityRecord, str]],
-    evidence_by_id: dict[str, SelectionEvidence],
-    locale: str,
-) -> list[str]:
-    """渲染單一 kind group 的 level、Function 與 bounded routing rationale。"""
-
-    labels = _LABELS[locale]
-    separator = "：" if locale == "zh-TW" else ": "
-    lines: list[str] = []
-    for level in ("PRIMARY", "OPTIONAL"):
-        level_pairs = tuple(pair for pair in pairs if pair[1] == level)
-        if not level_pairs:
-            continue
-        lines.extend([f"#### {level}", ""])
-        for record, selection_level in level_pairs:
-            evidence = evidence_by_id.get(record.id)
-            lines.extend(
-                [
-                    f"- {labels['name']}{separator}{record.name}",
-                    f"  {labels['kind']}{separator}{record.kind.value}",
-                    f"  {labels['selection_level']}{separator}{selection_level}",
-                    f"  {labels['function']}{separator}{_function_text(record, locale)}",
-                    f"  {labels['why_selected']}{separator}{_selection_why(record, evidence, locale)}",
-                    "",
-                ]
-            )
-    return lines[:-1] if lines and lines[-1] == "" else lines
-
-
-def _render_recommendation_only_lines(result: RecommendationResult, locale: str) -> list[str]:
-    """渲染 advisory-only capability，明確表示它不是 executable selection。"""
-
-    labels = _LABELS[locale]
-    separator = "：" if locale == "zh-TW" else ": "
-    evidence_by_id = {item.capability_id: item for item in result.selection_evidence}
-    lines: list[str] = []
-    for record in result.recommendation_only:
-        evidence = evidence_by_id.get(record.id)
-        lines.extend(
-            [
-                f"- {labels['name']}{separator}{record.name}",
-                f"  {labels['kind']}{separator}{record.kind.value}",
-                f"  {labels['function']}{separator}{_function_text(record, locale)}",
-                f"  {labels['why_considered']}{separator}{_selection_why(record, evidence, locale)}",
-                f"  {labels['not_executable']}",
-                f"  {labels['not_automatic']}",
-                "",
-            ]
-        )
-    return lines[:-1] if lines and lines[-1] == "" else lines
-
-
 def _function_text(record: CapabilityRecord, locale: str) -> str:
     """只讀取 canonical Function metadata；缺少 locale 值時使用明確 fallback。"""
 
@@ -413,76 +228,6 @@ def _function_text(record: CapabilityRecord, locale: str) -> str:
         if locale == "zh-TW"
         else "Function information unavailable."
     )
-
-
-def _selection_why(
-    record: CapabilityRecord,
-    evidence: SelectionEvidence | None,
-    locale: str,
-) -> str:
-    """將既有 reason codes 轉成最多兩句 user-facing rationale，不生成 hidden reasoning。"""
-
-    if evidence is None:
-        return _LABELS[locale]["no_evidence"]
-    messages = [
-        message
-        for code in evidence.reason_codes
-        if (message := _reason_message(code, record, evidence, locale))
-    ]
-    return " ".join(messages[:2]) or _LABELS[locale]["no_evidence"]
-
-
-def _reason_message(
-    code: str,
-    record: CapabilityRecord,
-    evidence: SelectionEvidence,
-    locale: str,
-) -> str:
-    """以固定 code/template 產生短理由；未知 code 不自行猜測文字。"""
-
-    if locale == "zh-TW":
-        if code == "explicit_request":
-            return "任務明確提出此能力。"
-        if code == "exact_trigger_match":
-            return f"任務符合觸發詞：{'、'.join(evidence.matched_triggers)}。"
-        if code == "specialist_match":
-            return "它是符合此任務類別的專門能力。"
-        if code == "requirement_coverage":
-            return f"它涵蓋符合的需求：{'、'.join(evidence.matched_requirements)}。"
-        if code == "action_requirement_coverage":
-            return f"它涵蓋指定動作：{'、'.join(evidence.matched_requirements)}。"
-        if code == "installed_available":
-            return "目前已安裝且可供選用。" if record.status.value == "installed" else "目前可用，作為可選能力。"
-        if code == "workspace_specific":
-            return "它由明確的 workspace skill root 提供。"
-        if code == "preferred_overlap_member":
-            return "它是重疊群組中符合任務的優先成員。"
-        if code == "complementary_optional":
-            return "它提供互補的可選涵蓋。"
-        if code == "fallback":
-            return "它是固定規則下的 fallback capability。"
-        return ""
-    if code == "explicit_request":
-        return "The task explicitly requests this capability."
-    if code == "exact_trigger_match":
-        return f"The task matches trigger(s): {', '.join(evidence.matched_triggers)}."
-    if code == "specialist_match":
-        return "It is a specialist match for the task category."
-    if code == "requirement_coverage":
-        return f"It covers the matched requirement: {', '.join(evidence.matched_requirements)}."
-    if code == "action_requirement_coverage":
-        return f"It covers the requested action: {', '.join(evidence.matched_requirements)}."
-    if code == "installed_available":
-        return "It is installed and available for selection." if record.status.value == "installed" else "It is available for optional selection."
-    if code == "workspace_specific":
-        return "It is declared by an explicit workspace skill root."
-    if code == "preferred_overlap_member":
-        return "It is the preferred member of its overlap group."
-    if code == "complementary_optional":
-        return "It provides complementary optional coverage."
-    if code == "fallback":
-        return "It is a deterministic fallback capability."
-    return ""
 
 
 def _display_categories(records: Sequence[CapabilityRecord], locale: str) -> str:
@@ -524,20 +269,6 @@ def _avoid_when(record: CapabilityRecord, locale: str) -> str:
         if locale == "en"
         else "任務不符合類別或 triggers 時。"
     )
-
-
-def _localized_rejection(reason: str, locale: str) -> str:
-    """將 routing rejection 的固定 reason 轉為 user-facing labels。"""
-
-    labels = _LABELS[locale]
-    if reason == "unavailable":
-        return labels["unavailable"]
-    if reason == "self-routing protection":
-        return labels["self_routing"]
-    if reason.startswith("redundant overlap_group: "):
-        group = reason.removeprefix("redundant overlap_group: ")
-        return f"{labels['redundant']}: {group}"
-    return reason
 
 
 def _write_utf8(path: Path, content: str) -> None:

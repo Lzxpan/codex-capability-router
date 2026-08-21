@@ -13,8 +13,7 @@ from pathlib import Path
 import unittest
 
 from codex_capability_router.catalog import generate_catalog, render_recommendations
-from codex_capability_router.models import CapabilityRecord, RouterInput
-from codex_capability_router.routing import route
+from codex_capability_router.models import CapabilityRecord
 from codex_capability_router.validation import record_from_mapping
 
 
@@ -84,25 +83,34 @@ class Phase4CatalogTests(unittest.TestCase):
         self.assertEqual(english_ids, _catalog_ids(self.bundle.zh_tw))
 
     def test_auto_language_selects_english(self) -> None:
-        """English user request 使用 auto 時輸出英文 labels。"""
+        """English user request 使用 auto 時輸出新版英文 selection labels。"""
 
         task = "Fix the React component UI bug."
-        result = route(RouterInput(task, self.registry, "auto"))
-        output = render_recommendations(result, language="auto", user_request=task)
-        self.assertIn("## Primary", output)
+        payload = {
+            "task_summary": task,
+            "selected_skills": [{"id": "react-ui-debugging", "reason": "Codex selected it."}],
+            "selection_status": "selected",
+        }
+        output = render_recommendations(payload, language="auto", user_request=task)
+        self.assertIn("## Selected Skills", output)
         self.assertIn("react-ui-debugging", output)
-        self.assertIn("source:", output)
+        self.assertIn("selection status", output.lower())
         self.assertNotIn("主要建議", output)
 
     def test_auto_language_selects_zh_tw(self) -> None:
-        """Traditional Chinese user request 使用 auto 時輸出繁中 labels。"""
+        """Traditional Chinese user request 使用 auto 時輸出新版繁中 labels。"""
 
         task = "請協助除錯 MCU 韌體的 UART 錯誤。"
-        result = route(RouterInput(task, self.registry, "auto"))
-        output = render_recommendations(result, language="auto", user_request=task)
-        self.assertIn("## 主要建議", output)
+        payload = {
+            "task_summary": task,
+            "selected_skills": [{"id": "firmware-debugging", "reason": "Codex 選擇此 Skill。"}],
+            "selection_status": "selected",
+        }
+        output = render_recommendations(payload, language="auto", user_request=task)
+        self.assertIn("## 已選技能", output)
         self.assertIn("firmware-debugging", output)
-        self.assertNotIn("## Primary", output)
+        self.assertIn("選擇狀態", output)
+        self.assertNotIn("PRIMARY", output)
 
 
 if __name__ == "__main__":

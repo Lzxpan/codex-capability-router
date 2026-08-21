@@ -123,7 +123,7 @@ class FoundationStructureTests(unittest.TestCase):
         # 原始內容：完整測試順序下只允許 __version__，忽略 Python submodule binding。
         # 修改原因：Phase 2/3/4 會載入 models、validation、discovery、registry、routing、catalog；
         # 匯出的純函式不代表執行 capability。
-        # 修改後功能：保留 version 與 no-execution 驗證，同時允許已核准的 Phase 2/3/4 module binding 與 exports。
+        # 修改後功能：保留 version 與 no-execution 驗證，同時允許已核准的 Phase 1/2/3/4 module binding 與 exports。
 
         package = importlib.import_module("codex_capability_router")
         self.assertEqual(package.__version__, "0.1.0-beta.1")
@@ -134,6 +134,9 @@ class FoundationStructureTests(unittest.TestCase):
             "registry",
             "routing",
             "catalog",
+            "inventory",
+            "selection",
+            "SelectionRouteInput",
             "__all__",
             "classify_capability",
             "classify_task",

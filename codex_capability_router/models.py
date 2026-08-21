@@ -44,6 +44,11 @@ class CapabilityStatus(str, Enum):
     AVAILABLE = "available"
     UNAVAILABLE = "unavailable"
     UNKNOWN = "unknown"
+    # 修改紀錄（2026-08-21，Steve Peng）
+    # 原始內容：status 僅有 installed、available、unavailable、unknown。
+    # 修改原因：v2.1 Phase 1 要求 runtime 宣告 disabled 時，舊 cache 不得讓 Skill 進入可用 inventory。
+    # 修改後功能：以明確 disabled 狀態保留來源資訊，並由 inventory eligibility 排除。
+    DISABLED = "disabled"
 
 
 _ACTION_REQUIREMENTS = frozenset(
@@ -87,7 +92,7 @@ class SelectionEvidence:
 
 @dataclass(frozen=True)
 class RouterInput:
-    """Router 輸入：任務、registry、輸出語言與不影響 selection 的 execution permission。"""
+    """Deprecated compatibility input；Phase 4 production route 不接受此型別。"""
 
     user_task: str
     capability_registry: tuple["CapabilityRecord", ...]
@@ -154,7 +159,7 @@ class RejectedCandidate:
 
 @dataclass(frozen=True)
 class RecommendationResult:
-    """Phase 3 advisory routing result；只含建議資料，不含 execution action。"""
+    """Deprecated compatibility result；不代表 Phase 4 production selection output。"""
 
     selected_primary: tuple["CapabilityRecord", ...]
     selected_optional: tuple["CapabilityRecord", ...]

@@ -236,8 +236,17 @@ def _read_skill(directory: Path, source: str) -> tuple[CapabilityRecord | None, 
     # 修改後功能：保留經 bounded parser 驗證的 description；未知結構仍由 record validation 拒絕。
     metadata.setdefault("kind", CapabilityKind.SKILL.value)
     metadata.setdefault("status", "unknown")
+    # 修改紀錄（2026-08-21，Steve Peng）
+    # 原始內容：discovery 將未知的 summary/requirements frontmatter 直接交給 canonical record validation。
+    # 修改原因：Phase 2 Enriched Profile 需要保留這兩個 bounded 說明欄位，但它們不是 Basic Profile canonical fields。
+    # 修改後功能：Skill discovery 忽略 enriched-only metadata，完整內容只在候選需要時由 inventory lazy reader 讀取。
+    metadata_for_record = {
+        key: value
+        for key, value in metadata.items()
+        if key not in {"summary", "requirements"}
+    }
     try:
-        return record_from_mapping(metadata, source=source, default_kind=CapabilityKind.SKILL), None
+        return record_from_mapping(metadata_for_record, source=source, default_kind=CapabilityKind.SKILL), None
     except ValueError:
         return None, DiscoveryDiagnostic("malformed_skill", "skill metadata is invalid", source)
 

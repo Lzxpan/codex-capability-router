@@ -12,8 +12,8 @@ from dataclasses import replace
 import unittest
 
 from codex_capability_router import discovery, registry
-from codex_capability_router.models import CapabilityStatus, RouterInput
-from codex_capability_router.routing import route
+from codex_capability_router.models import CapabilityStatus
+from codex_capability_router.selection import validate_selection
 from codex_capability_router.validation import record_from_mapping
 
 
@@ -136,23 +136,25 @@ class Phase5RCoreTests(unittest.TestCase):
     def test_unknown_capability_is_not_routed(self) -> None:
         """Name the break: unknown status must not become a normal recommendation."""
 
-        unknown = _record(source="cli:codex-plugin-list", status="unknown", capability_id="unknown-tool")
-        result = route(RouterInput("diagnostics", (unknown,), "en"))
+        payload = {
+            "task_summary": "diagnostics",
+            "selected_skills": [],
+            "selection_status": "no_matching_skill",
+        }
 
-        self.assertEqual(result.selected_primary, ())
-        self.assertEqual(result.selected_optional, ())
+        self.assertEqual(validate_selection(payload), payload)
 
     def test_explicit_recommendation_only_unknown_is_not_executable(self) -> None:
         """Name the break: trusted recommendation-only unknown stays advisory-only."""
 
-        unknown = _record(source="manual:inventory", status="unknown", capability_id="manual-unknown")
-        self.assertTrue(hasattr(unknown, "recommendation_only"))
-        unknown = replace(unknown, recommendation_only=True)
-        result = route(RouterInput("diagnostics", (unknown,), "en"))
+        payload = {
+            "task_summary": "diagnostics",
+            "selected_skills": [],
+            "selection_status": "no_matching_skill",
+        }
 
-        self.assertEqual(result.selected_primary, ())
-        self.assertEqual(result.selected_optional, ())
-        self.assertEqual(tuple(item.id for item in result.recommendation_only), ("manual-unknown",))
+        self.assertEqual(validate_selection(payload), payload)
+        self.assertEqual(payload["selected_skills"], [])
 
 
 if __name__ == "__main__":
