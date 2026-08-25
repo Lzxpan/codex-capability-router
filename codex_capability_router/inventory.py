@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import unicodedata
 
-from .discovery import _frontmatter, discover_skill_roots
+from .discovery import _canonical_skill_id, _frontmatter, discover_skill_roots
 from .models import (
     CapabilityKind,
     CapabilityRecord,
@@ -25,6 +25,7 @@ from .routing import _is_controller
 # ponytail: cache 只保留記憶體中的 Basic Profile；若未來需要跨程序持久化，先補 privacy/eviction 規格再加入 storage。
 PROFILE_FORMAT_VERSION = "phase1-basic-profile-v1"
 _AVAILABLE_STATUSES = frozenset({CapabilityStatus.INSTALLED, CapabilityStatus.AVAILABLE})
+_CANONICAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 
 
 @dataclass(frozen=True)
@@ -393,6 +394,7 @@ def _require_explicit_id(value: object) -> None:
         or "/" in value
         or "\\" in value
         or "skill.md" in value.casefold()
+        or _CANONICAL_ID.fullmatch(value.strip()) is None
     ):
         raise ValueError("explicit skill ID must be a bounded canonical ID")
 
@@ -504,8 +506,8 @@ def _read_allowlisted_skill_contents(
                 continue
             if metadata is None:
                 continue
-            capability_id = metadata.get("id", metadata.get("name"))
-            if isinstance(capability_id, str) and capability_id:
+            capability_id = _canonical_skill_id(metadata, candidate)
+            if isinstance(capability_id, str) and _CANONICAL_ID.fullmatch(capability_id):
                 result.setdefault((source, capability_id), raw)
                 paths.setdefault(capability_id, skill_file)
     return result, paths

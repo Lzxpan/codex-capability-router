@@ -36,6 +36,7 @@ def _write_skill(
     directory.mkdir(parents=True)
     metadata = [
         "---",
+        f"id: {skill_id}",
         f"name: {skill_id}",
         "description: A clear skill description for Phase 3 contract tests.",
         f"status: {status}",

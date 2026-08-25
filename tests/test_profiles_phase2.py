@@ -36,7 +36,7 @@ def _write_skill(
     """建立 Phase 2 temporary Skill；synthetic IDs 僅存在測試 fixture。"""
 
     directory.mkdir(parents=True)
-    lines = ["---", f"name: {name}", f"description: {description}"]
+    lines = ["---", f"id: {name}", f"name: {name}", f"description: {description}"]
     if status is not None:
         lines.append(f"status: {status}")
     if summary is not None:

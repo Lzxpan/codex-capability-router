@@ -30,6 +30,8 @@ _APPROVED_CLI_PROBES = {
     ),
 }
 
+# 修改紀錄（2026-08-25，Steve Peng）：缺少 machine-readable id 時使用明確 entry 名稱；display name 僅供人類顯示。
+
 
 def import_runtime_envelope(
     payload: Mapping[str, object],
@@ -245,10 +247,18 @@ def _read_skill(directory: Path, source: str) -> tuple[CapabilityRecord | None, 
         for key, value in metadata.items()
         if key not in {"summary", "requirements"}
     }
+    metadata_for_record.setdefault("id", _canonical_skill_id(metadata, directory))
     try:
         return record_from_mapping(metadata_for_record, source=source, default_kind=CapabilityKind.SKILL), None
     except ValueError:
         return None, DiscoveryDiagnostic("malformed_skill", "skill metadata is invalid", source)
+
+
+def _canonical_skill_id(metadata: Mapping[str, object], directory: Path) -> object:
+    """取得 machine path 的 canonical ID；display name 僅保留為人類名稱。"""
+
+    explicit_id = metadata.get("id")
+    return directory.name if explicit_id is None else explicit_id
 
 
 def _frontmatter(text: str) -> dict[str, object] | None:

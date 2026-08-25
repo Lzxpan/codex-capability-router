@@ -23,10 +23,16 @@ from .routing import _is_controller
 # 原始內容：Phase 1/2 只有 inventory、profile 與 candidate retrieval，沒有新版 selection contract。
 # 修改原因：Phase 3 需要在不改舊 production final selector 的前提下，驗證初選、完整 handoff、budget、correction、final validation 與 render 的順序及安全邊界。
 # 修改後功能：提供僅供新版 contract 使用的 prepare/select/handoff/state/validate/render API；不呼叫模型、不執行 Skill，也不改動舊 routing path。
+# 修改紀錄（2026-08-25，Steve Peng）
+# 原始內容：SelectionState 只有次數上限，route 完成後仍可被當成可變的 OPEN state 使用。
+# 修改原因：Integration Hardening 要求 Final Selection 後不可 correction、expanded retrieval 或變更 selected Skill。
+# 修改後功能：加入 OPEN/FINALIZED lifecycle 與 finalized selected IDs；封存後所有 selection transition 及不同 final payload 都會被拒絕。
 
 SELECTION_STATUSES = frozenset({"selected", "no_matching_skill"})
+SELECTION_LIFECYCLES = frozenset({"OPEN", "FINALIZED"})
 _AVAILABLE_STATUSES = frozenset({CapabilityStatus.INSTALLED, CapabilityStatus.AVAILABLE})
 _FINGERPRINT = re.compile(r"^[0-9a-f]{64}$")
+_CANONICAL_SKILL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 
 
 @dataclass(frozen=True)
@@ -56,13 +62,15 @@ class PreliminarySelection:
 
 @dataclass(frozen=True)
 class SelectionState:
-    """保存整條 route 的一次 applicability、一次 expanded 與一次 correction 狀態。"""
+    """保存 route 的 bounded transition 與 finalized selection immutable state。"""
 
     budget: RetrievalBudget = field(default_factory=RetrievalBudget)
     retrieval_rounds: int = 1
     applicability_checks: int = 0
     correction_count: int = 0
     handoffs: tuple[FullInstructionHandoff, ...] = ()
+    lifecycle: str = "OPEN"
+    final_selected_skill_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """拒絕超過規劃上限的 route state，避免形成 retrieval/review loop。"""
@@ -73,10 +81,16 @@ class SelectionState:
             raise ValueError("applicability check count must be 0 or 1")
         if self.correction_count not in (0, 1):
             raise ValueError("correction count must be 0 or 1")
+        if self.lifecycle not in SELECTION_LIFECYCLES:
+            raise ValueError("selection lifecycle must be OPEN or FINALIZED")
+        if self.lifecycle == "OPEN" and self.final_selected_skill_ids:
+            raise ValueError("OPEN selection cannot contain finalized Skill IDs")
+        _validated_id_tuple(self.final_selected_skill_ids)
 
     def start_applicability_check(self) -> "SelectionState":
         """開始唯一一次 Final Applicability Check，不建立第二套 reviewer。"""
 
+        self._require_open()
         if self.applicability_checks == 1:
             raise ValueError("applicability check is already complete")
         return replace(self, applicability_checks=1)
@@ -84,6 +98,7 @@ class SelectionState:
     def consume_expanded_retrieval(self) -> "SelectionState":
         """消耗 route 共用的唯一 expanded retrieval，拒絕第三輪 retrieval。"""
 
+        self._require_open()
         if self.retrieval_rounds == 2:
             raise ValueError("expanded retrieval is already complete")
         return replace(
@@ -91,6 +106,29 @@ class SelectionState:
             budget=self.budget.consume_expanded(),
             retrieval_rounds=2,
         )
+
+    def finalize(self, selected_skill_ids: Sequence[str]) -> "SelectionState":
+        """在 final validation 成功後封存選擇；封存後不可再修改 route state。"""
+
+        self._require_open()
+        ids = _validated_id_tuple(selected_skill_ids)
+        return replace(
+            self,
+            lifecycle="FINALIZED",
+            final_selected_skill_ids=ids,
+        )
+
+    @property
+    def is_finalized(self) -> bool:
+        """回報此 selection state 是否已完成 immutable finalization。"""
+
+        return self.lifecycle == "FINALIZED"
+
+    def _require_open(self) -> None:
+        """拒絕 finalized route 的 expanded、correction 或其他 state transition。"""
+
+        if self.lifecycle != "OPEN":
+            raise ValueError("selection is finalized; create a new routing request")
 
 
 @dataclass(frozen=True)
@@ -212,6 +250,8 @@ def apply_correction(
 ) -> SelectionState:
     """套用唯一一次 correction；每個替代 ID 必須已有完整 instruction handoff。"""
 
+    if state.is_finalized:
+        raise ValueError("selection is finalized; correction requires a new routing request")
     if state.correction_count == 1:
         raise ValueError("selection correction is already complete")
     ids = _validated_id_tuple(replacement_ids)
@@ -238,6 +278,10 @@ def validate_selection(
     validated = _validate_selection_schema(payload)
     if state is not None and state.budget.expanded_retrievals_used > 1:
         raise ValueError("expanded retrieval budget cannot exceed one")
+    if state is not None and state.is_finalized:
+        selected_ids = tuple(item["id"] for item in validated["selected_skills"])
+        if selected_ids != state.final_selected_skill_ids:
+            raise ValueError("selection is finalized and cannot be changed")
     if inventory is None:
         return validated
 
@@ -347,11 +391,8 @@ def _require_skill_id(skill_id: object) -> None:
 
     if (
         not isinstance(skill_id, str)
-        or not skill_id.strip()
+        or _CANONICAL_SKILL_ID.fullmatch(skill_id.strip()) is None
         or len(skill_id) > 128
-        or "/" in skill_id
-        or "\\" in skill_id
-        or "skill.md" in skill_id.casefold()
     ):
         raise ValueError("Skill ID must be a bounded canonical ID")
 

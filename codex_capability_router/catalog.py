@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 from .models import CapabilityRecord
+from .routing import SelectionReceipt
 from .selection import validate_selection
 from .validation import record_from_mapping
 
@@ -34,6 +35,10 @@ from .validation import record_from_mapping
 # 原始內容：render_recommendations 仍可接收舊 RecommendationResult，且私有 renderer 保留 PRIMARY/OPTIONAL 與舊 outcome。
 # 修改原因：v2.1 Phase 4 要求新版 selection contract 成為唯一 production output，不得由舊 renderer 影響正式結果。
 # 修改後功能：render_recommendations 只接受並驗證 selected/no_matching_skill payload；移除未被入口使用的舊 selection renderer，catalog metadata 產生仍保留。
+# 修改紀錄（2026-08-25，Steve Peng）
+# 原始內容：正式 renderer 接受普通 selection dict，無法辨識結果是否真的經過 production route。
+# 修改原因：Integration Hardening 要求外層 hand-written result 不得被認定為 Router Receipt。
+# 修改後功能：render_recommendations 只接受 SelectionReceipt；render_selection_payload 僅保留低階 payload 渲染測試用途。
 
 SUPPORTED_LANGUAGES = ("en", "zh-TW", "auto")
 
@@ -107,12 +112,29 @@ def generate_catalog(registry: Sequence[CapabilityRecord]) -> CatalogBundle:
 
 
 def render_recommendations(
+    payload: SelectionReceipt,
+    *,
+    language: str = "en",
+    user_request: str = "",
+) -> str:
+    """只渲染 production route 產生的 SelectionReceipt。"""
+
+    if not isinstance(payload, SelectionReceipt):
+        raise TypeError("production renderer requires a SelectionReceipt from route()")
+    return render_selection_payload(
+        payload.selection_payload(),
+        language=language,
+        user_request=user_request,
+    )
+
+
+def render_selection_payload(
     payload: Mapping[str, object],
     *,
     language: str = "en",
     user_request: str = "",
 ) -> str:
-    """渲染新版 selected_skills/status；不從 metadata 重算或補入 Skill。"""
+    """渲染低階 selection payload；此函式不宣稱 payload 曾經過 production route。"""
 
     locale = resolve_language(language, user_request)
     validated = validate_selection(payload)

@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 import unittest
 
-from codex_capability_router.catalog import generate_catalog, render_recommendations
+from codex_capability_router.catalog import generate_catalog, render_selection_payload
 from codex_capability_router.models import CapabilityRecord
 from codex_capability_router.validation import record_from_mapping
 
@@ -91,7 +91,7 @@ class Phase4CatalogTests(unittest.TestCase):
             "selected_skills": [{"id": "react-ui-debugging", "reason": "Codex selected it."}],
             "selection_status": "selected",
         }
-        output = render_recommendations(payload, language="auto", user_request=task)
+        output = render_selection_payload(payload, language="auto", user_request=task)
         self.assertIn("## Selected Skills", output)
         self.assertIn("react-ui-debugging", output)
         self.assertIn("selection status", output.lower())
@@ -106,7 +106,7 @@ class Phase4CatalogTests(unittest.TestCase):
             "selected_skills": [{"id": "firmware-debugging", "reason": "Codex 選擇此 Skill。"}],
             "selection_status": "selected",
         }
-        output = render_recommendations(payload, language="auto", user_request=task)
+        output = render_selection_payload(payload, language="auto", user_request=task)
         self.assertIn("## 已選技能", output)
         self.assertIn("firmware-debugging", output)
         self.assertIn("選擇狀態", output)

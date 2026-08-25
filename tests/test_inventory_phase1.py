@@ -25,6 +25,7 @@ def _write_skill(
     directory.mkdir(parents=True)
     (directory / "SKILL.md").write_text(
         "---\n"
+        f"id: {name}\n"
         f"name: {name}\n"
         f"description: {description}\n"
         f"status: {status}\n"

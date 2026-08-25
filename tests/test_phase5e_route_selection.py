@@ -31,7 +31,9 @@ class Phase5ERouteSelectionTests(unittest.TestCase):
                 preliminary_skill_ids=("phase5e-valid",),
                 final_selection=payload,
             )
-            self.assertEqual(route(request), payload)
+            result = route(request)
+            self.assertEqual(result.selection_payload(), payload)
+            self.assertTrue(result["router_invoked"])
 
     def test_controller_support_and_unavailable_never_enter_final(self) -> None:
         """既有 hard gates 仍在新版 production path 生效。"""

@@ -26,6 +26,7 @@ from .models import CapabilityKind, CapabilityRecord, CapabilityStatus
 # 原始內容：canonical record 不接受 description/provides，非程式 artifact requirement 只能依賴固定 triggers。
 # 修改原因：Phase 5F 需要讓 discovery 正規化 generic task metadata，避免 system/built-in/plugin capability 因 metadata 缺口無法被選取。
 # 修改後功能：驗證並保留 description/provides；role 仍由 routing_support 明確標記，不由 source 推導。
+# 修改紀錄（2026-08-25，Steve Peng）：record mapping 缺少 id 時不再以 name 猜測 machine ID；canonical ID 必須由 caller/discovery 明確提供。
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 _SENSITIVE_FIELD_NAMES = {"api_key", "apikey", "credential", "credentials", "password", "secret", "token"}
@@ -141,7 +142,7 @@ def record_from_mapping(
     record_source = source if source is not None else payload.get("source")
     function_en, function_zh_tw = _localized_function(payload.get("function"))
     return CapabilityRecord(
-        id=_require_text(payload.get("id", payload.get("name")), "id", identifier=True),
+        id=_require_text(payload.get("id"), "id", identifier=True),
         name=_require_text(payload.get("name"), "name"),
         kind=_enum_value(payload.get("kind"), "kind", CapabilityKind, default_kind.value),  # type: ignore[arg-type]
         status=_enum_value(payload.get("status"), "status", CapabilityStatus, CapabilityStatus.UNKNOWN.value),  # type: ignore[arg-type]

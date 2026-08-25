@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from codex_capability_router.catalog import render_recommendations
+from codex_capability_router.catalog import render_selection_payload
 
 
 class Phase5DExplanationTests(unittest.TestCase):
@@ -18,7 +18,7 @@ class Phase5DExplanationTests(unittest.TestCase):
             "selected_skills": [{"id": "source-review", "reason": "Codex judged it applicable."}],
             "selection_status": "selected",
         }
-        output = render_recommendations(payload, language="en")
+        output = render_selection_payload(payload, language="en")
         self.assertIn("source-review", output)
         self.assertIn("Codex judged it applicable.", output)
         self.assertNotIn("PRIMARY", output)
@@ -34,7 +34,7 @@ class Phase5DExplanationTests(unittest.TestCase):
         }
         for language in ("en", "zh-TW"):
             with self.subTest(language=language):
-                output = render_recommendations(payload, language=language)
+                output = render_selection_payload(payload, language=language)
                 self.assertIn("no_matching_skill", output)
                 self.assertNotIn("native_model_sufficient", output)
                 self.assertNotIn("PRIMARY", output)
@@ -49,7 +49,7 @@ class Phase5DExplanationTests(unittest.TestCase):
             "selection_status": "native_model_sufficient",
         }
         with self.assertRaises(ValueError):
-            render_recommendations(payload)
+            render_selection_payload(payload)
 
 
 if __name__ == "__main__":

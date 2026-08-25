@@ -31,7 +31,9 @@ class Phase5FNonCodeRoutingTests(unittest.TestCase):
                 preliminary_skill_ids=("phase5f-image",),
                 final_selection=payload,
             )
-            self.assertEqual(route(request), payload)
+            result = route(request)
+            self.assertEqual(result.selection_payload(), payload)
+            self.assertTrue(result["router_invoked"])
 
     def test_selection_output_has_no_execution_or_artifact_fallback(self) -> None:
         """route 只回傳新版 selection contract，不管理 workflow 或 artifact execution。"""
@@ -51,7 +53,8 @@ class Phase5FNonCodeRoutingTests(unittest.TestCase):
                 final_selection=payload,
             )
             result = route(request)
-            self.assertEqual(result, payload)
+            self.assertEqual(result.selection_payload(), payload)
+            self.assertTrue(result["router_invoked"])
             self.assertNotIn("execution_allowed", result)
             self.assertNotIn("workflow", result)
 

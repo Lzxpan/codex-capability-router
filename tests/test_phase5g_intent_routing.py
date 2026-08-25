@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from codex_capability_router.catalog import render_recommendations
+from codex_capability_router.catalog import render_selection_payload
 from codex_capability_router.selection import validate_selection
 
 
@@ -22,7 +22,7 @@ class Phase5GIntentRoutingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_selection(payload)
         with self.assertRaises(ValueError):
-            render_recommendations(payload)
+            render_selection_payload(payload)
 
     def test_old_action_fields_cannot_rewrite_valid_codex_output(self) -> None:
         """新版 output 不保存 action/constraint taxonomy，也不自行補 Skill。"""

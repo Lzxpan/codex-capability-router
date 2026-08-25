@@ -22,7 +22,7 @@ def _write_skill(directory: Path, name: str, description: str = "test skill") ->
 
     directory.mkdir(parents=True)
     (directory / "SKILL.md").write_text(
-        f"---\nname: {name}\ndescription: {description}\n---\n",
+        f"---\nid: {name}\nname: {name}\ndescription: {description}\n---\n",
         encoding="utf-8",
     )
 
@@ -103,6 +103,7 @@ class Phase2DiscoveryTests(unittest.TestCase):
             skill.mkdir()
             (skill / "SKILL.md").write_text(
                 "---\n"
+                "id: synthetic-multiline-skill\n"
                 "name: synthetic-multiline-skill\n"
                 "description: |\n"
                 "  First description line.\n"

@@ -7,9 +7,9 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from codex_capability_router.catalog import render_recommendations
+from codex_capability_router.catalog import render_selection_payload
 from codex_capability_router.models import RouterInput
-from codex_capability_router.routing import SelectionRouteInput, route
+from codex_capability_router.routing import SelectionReceipt, SelectionRouteInput, route
 
 
 def _write_skill(
@@ -30,6 +30,7 @@ def _write_skill(
     directory.mkdir(parents=True)
     lines = [
         "---",
+        f"id: {skill_id}",
         f"name: {skill_id}",
         f"description: {description}",
         f"status: {status}",
@@ -95,7 +96,9 @@ class Phase4ProductionSelectionTests(unittest.TestCase):
         _write_skill(self.root, "phase4-choice")
         task = "phase4 task"
         output = route(self._request(task, ("phase4-choice",), self._selected(("phase4-choice",), task)))
-        self.assertEqual(set(output), {"task_summary", "selected_skills", "selection_status"})
+        self.assertIsInstance(output, SelectionReceipt)
+        self.assertTrue(output["router_invoked"])
+        self.assertEqual(output.selection_payload(), self._selected(("phase4-choice",), task))
         self.assertEqual(output["selection_status"], "selected")
         self.assertEqual(output["selected_skills"][0]["id"], "phase4-choice")
 
@@ -190,8 +193,8 @@ class Phase4ProductionSelectionTests(unittest.TestCase):
 
         task = "phase4 task"
         payload = self._selected(("phase4-choice",), task)
-        english = render_recommendations(payload, language="en", user_request=task)
-        traditional_chinese = render_recommendations(payload, language="zh-TW", user_request="請處理 Phase 4 工作")
+        english = render_selection_payload(payload, language="en", user_request=task)
+        traditional_chinese = render_selection_payload(payload, language="zh-TW", user_request="請處理 Phase 4 工作")
         for output in (english, traditional_chinese):
             self.assertIn("phase4-choice", output)
             self.assertIn("selected", output.lower())
