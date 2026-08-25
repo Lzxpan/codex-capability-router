@@ -2,6 +2,39 @@
 
 All notable changes to `codex-capability-router` are documented here.
 
+## v0.1.0-beta.4
+
+Integration hardening release. This release does not replace the beta.3
+semantic selection design.
+
+### Hardened
+
+- Enforced formal Selection Results through
+  `routing.route(SelectionRouteInput(...))`; outer orchestration cannot create
+  a production Receipt.
+- Added an automatic, bounded, auditable Selection Receipt for candidate,
+  preliminary, full-handoff, final-selection, status, retrieval, correction,
+  and finalization evidence. It stores no private chain-of-thought or sensitive
+  data.
+- Enforced canonical Skill IDs for machine paths; display names remain for
+  human presentation only.
+- Added an immutable `OPEN` -> `FINALIZED` selection lifecycle. Finalized
+  selections reject correction, Expanded Retrieval, and selected-Skill
+  mutation; new work starts a new routing request.
+- Kept the beta.3 semantic Skill selection core unchanged.
+
+### Validation
+
+- Full automated tests: **91/91 PASS**.
+- Integration Live Acceptance: **4/4 PASS**.
+- Compileall, UTF-8/U+FFFD, diff, and production-source checks: PASS.
+
+### Known observation
+
+Existing runtime inventory may report malformed Skill metadata diagnostics.
+This observation predates beta.4 and was not introduced or changed by this
+release.
+
 ## v0.1.0-beta.3
 
 Third public beta release, focused on semantic Codex-driven Skill selection and

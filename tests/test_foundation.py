@@ -113,7 +113,11 @@ class FoundationStructureTests(unittest.TestCase):
 
         metadata = _read_utf8("pyproject.toml")
         self.assertIn('name = "codex-capability-router"', metadata)
-        self.assertIn('version = "0.1.0-beta.3"', metadata)
+        # 修改紀錄（2026-08-25，Steve Peng）
+        # 原始內容：測試固定期待 beta.3 package metadata。
+        # 修改原因：beta.4 release preparation 更新版本 metadata 後，regression test 必須驗證同一版本。
+        # 修改後功能：測試確認 pyproject 使用 v0.1.0-beta.4，且不改變 runtime dependency 邊界。
+        self.assertIn('version = "0.1.0-beta.4"', metadata)
         self.assertIn("dependencies = []", metadata)
 
     def test_package_exports_version_without_execution(self) -> None:
@@ -128,9 +132,13 @@ class FoundationStructureTests(unittest.TestCase):
         # 原始內容：測試固定期待 beta.1 package metadata。
         # 修改原因：beta.3 release preparation 更新版本 metadata 後，regression test 必須驗證同一版本。
         # 修改後功能：測試確認 package 匯出 v0.1.0-beta.3，且不改變 no-execution 邊界。
+        # 修改紀錄（2026-08-25，Steve Peng）
+        # 原始內容：測試固定期待 beta.3 package metadata。
+        # 修改原因：beta.4 release preparation 更新版本 metadata 後，regression test 必須驗證同一版本。
+        # 修改後功能：測試確認 package 匯出 v0.1.0-beta.4，且不改變 no-execution 邊界。
 
         package = importlib.import_module("codex_capability_router")
-        self.assertEqual(package.__version__, "0.1.0-beta.3")
+        self.assertEqual(package.__version__, "0.1.0-beta.4")
         allowed_submodules = {
             "models",
             "validation",

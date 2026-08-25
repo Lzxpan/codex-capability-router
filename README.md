@@ -1,14 +1,14 @@
 # Codex Capability Router
 
-Version: `v0.1.0-beta.3`
+Version: `v0.1.0-beta.4`
 Status: **Beta / Pre-release**
 
-Codex Capability Router v0.1.0-beta.3 is a local-first, context-first, read-only
+Codex Capability Router v0.1.0-beta.4 is a local-first, context-first, read-only
 capability recommendation skill with bounded runtime discovery, profile-based
 candidate retrieval, Codex-assisted final Skill selection, and bilingual output.
 
-This release has passed the full regression suite: **81/81 tests pass**, and
-Phase 5 Full Live Acceptance passes all five cases. Compile, UTF-8/U+FFFD,
+This release has passed the full regression suite: **91/91 tests pass**, and
+Integration Live Acceptance passes all four cases. Compile, UTF-8/U+FFFD,
 diff, and production-source checks also pass. The canonical routing fixture
 remains 12 scenarios (6 `zh-TW`, 6 `en`). Plugin Eval currently reports a
 static deferred-context estimate; that estimate includes repository artifacts
@@ -20,6 +20,25 @@ STM32G0 firmware workspace. It verified automatic and explicit routing,
 workspace-specific specialist preference, route-only selection, downstream
 execution, and the PASS/FAIL/BLOCKED/HARDWARE_PENDING evidence boundaries.
 Private project details are intentionally omitted.
+
+## What v0.1.0-beta.4 hardens
+
+This release does not replace the beta.3 semantic selection design. It hardens
+the integration boundary:
+
+- Formal Selection Results must come from `routing.route(SelectionRouteInput(...))`;
+  outer orchestration cannot create a production Receipt.
+- Each formal route emits a bounded, auditable Selection Receipt containing
+  candidate, preliminary, full-handoff, final-selection, status, retrieval,
+  correction, and finalization evidence. It stores no private chain-of-thought
+  or sensitive data.
+- Machine paths use canonical Skill IDs; display names remain presentation-only.
+- Selection lifecycle is `OPEN` to `FINALIZED`; finalized selections are
+  immutable. New work starts a new routing request.
+
+The beta.3 semantic selection core—Codex task-meaning selection, recall-first
+retrieval, profiles, and bounded Expanded Retrieval/Correction limits—remains
+unchanged.
 
 ## Current v0.1.0 boundary
 
@@ -103,6 +122,8 @@ inventory. Generated bilingual catalogs are `docs/CATALOG.en.md` and
 Optional bilingual Function metadata uses the registry `function` object with
 `en` and `zh-TW` values. Machine-readable selection output contains
 `task_summary`, `selected_skills` with concise reasons, and `selection_status`.
+Formal production routing also returns the bounded Selection Receipt described
+above.
 It does not emit PRIMARY/OPTIONAL levels or recommendation-only final-selection
 semantics.
 
@@ -147,7 +168,7 @@ The beta scope is read-only runtime discovery, canonical registry merge,
 inventory/profile caching, recall-first retrieval, Codex-driven Skill selection,
 full applicability validation, bilingual output, and bounded validation. The
 canonical fixture contains 12 scenarios: 6 `zh-TW` and 6 `en`; the full suite
-contains 81 tests and Phase 5 Live Acceptance contains five cases.
+contains 91 tests and Integration Live Acceptance contains four cases.
 
 Plugin Eval reports an estimated-static deferred context cost. This figure is
 not measured runtime token usage; repository documentation, tests, fixtures,
@@ -208,12 +229,12 @@ deliberately small. They do not grant execution or installation authority.
 ## Phase 5 evidence boundary
 
 The canonical fixture contains twelve routing cases, while the full Python
-regression contains 81 tests and Full Live Acceptance contains five runtime
+regression contains 91 tests and Integration Live Acceptance contains four runtime
 cases. Local software tests do not prove hardware, physical water-path,
 external capability, or biological acceptance.
 
 Runtime discovery currently reports 139 malformed Skill diagnostics. This is a
-non-blocking observation recorded for follow-up; beta.3 does not change
+non-blocking observation recorded for follow-up; beta.4 does not change
 discovery scope to address it.
 
 ## Real-world local acceptance
@@ -256,4 +277,8 @@ Marketplace submission.
 原始內容：README 仍描述 beta.2 的固定 primary/optional routing 與 46/46 suite。
 修改原因：同步 beta.3 的 Codex final Skill selection contract、81/81 regression 與 Phase 5 Full Live Acceptance。
 修改後功能：文件反映 inventory/profile、recall-first retrieval、完整 SKILL.md applicability、兩種 selection status、無 legacy/silent fallback，以及 139 malformed diagnostics 的 non-blocking 邊界。
+修改紀錄（2026-08-25，Steve Peng）
+原始內容：README 仍標示 beta.3 與 beta.3 validation baseline。
+修改原因：準備 beta.4 release metadata 與 Integration Hardening release notes。
+修改後功能：文件反映 91/91 tests、Integration Live Acceptance 4/4 與 production route、Receipt、canonical ID、finalization 邊界；不改變 production behavior。
 -->

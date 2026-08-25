@@ -8,8 +8,12 @@
 # 原始內容：__version__ = "0.1.0-beta.1"。
 # 修改原因：beta.3 release preparation 必須讓 package metadata 與待發布版本一致。
 # 修改後功能：公開 v0.1.0-beta.3 版本識別；不改變 Router production behavior。
+# 修改紀錄（2026-08-25，Steve Peng）
+# 原始內容：__version__ = "0.1.0-beta.3"。
+# 修改原因：beta.4 release preparation 必須讓 package metadata 與待發布版本一致。
+# 修改後功能：公開 v0.1.0-beta.4 版本識別；不改變 Router production behavior。
 
-__version__ = "0.1.0-beta.3"
+__version__ = "0.1.0-beta.4"
 
 from .registry import classify_capability, deduplicate_registry
 from .routing import SelectionRouteInput, route

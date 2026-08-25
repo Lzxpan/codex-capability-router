@@ -1,14 +1,14 @@
 # Codex Capability Router
 
-版本：`v0.1.0-beta.3`
+版本：`v0.1.0-beta.4`
 狀態：**Beta / Pre-release（公開測試版）**
 
-Codex Capability Router v0.1.0-beta.3 是 local-first、context-first、read-only 的
+Codex Capability Router v0.1.0-beta.4 是 local-first、context-first、read-only 的
 capability recommendation skill，提供有界 runtime discovery、profile-based candidate
 retrieval、由 Codex 協助的 final Skill selection 與雙語輸出。
 
-本版本已通過完整 regression suite：**81/81 tests pass**，且 Phase 5 Full Live
-Acceptance 五個案例全部 PASS。compile、UTF-8/U+FFFD、diff 與 production source
+本版本已通過完整 regression suite：**91/91 tests pass**，且 Integration Live
+Acceptance 四個案例全部 PASS。compile、UTF-8/U+FFFD、diff 與 production source
 check 也全部通過。Canonical routing fixture 仍為 12 個 scenarios（`zh-TW` 6 個、
 `en` 6 個）。Plugin Eval 目前回報 static deferred-context estimate；該估計包含
 repository artifacts，並不是 measured runtime token consumption。正式升級為 stable
@@ -18,6 +18,17 @@ repository artifacts，並不是 measured runtime token consumption。正式升�
 驗證 automatic/explicit routing、workspace-specific specialist preference、
 route-only selection、downstream execution，以及 PASS/FAIL/BLOCKED/
 HARDWARE_PENDING 的 evidence boundaries。私有專案細節刻意不公開。
+
+## v0.1.0-beta.4 整合強化
+
+本版本不取代 beta.3 的語意 Skill Selection 設計，只強化整合邊界：
+
+- 正式 Selection Result 必須來自 `routing.route(SelectionRouteInput(...))`；外層不能偽造 production Receipt。
+- 每次正式 route 自動產生有界、可稽核的 Selection Receipt，記錄 candidate、preliminary、full handoff、final selected、status、retrieval、correction 與 finalization evidence；不保存 private chain-of-thought 或敏感資料。
+- machine path 全程使用 canonical Skill ID；display name 僅供人類顯示。
+- Selection lifecycle 為 `OPEN` → `FINALIZED`；完成後 selection immutable。新工作必須建立新的 routing request。
+
+beta.3 的 Codex 語意選擇、recall-first retrieval、Profile 與 Expanded Retrieval/Correction 次數上限保持不變。
 
 ## 目前 v0.1.0 邊界
 
@@ -94,7 +105,8 @@ Runtime registry 是 canonical 且以單次 runtime 為範圍，只存在於目�
 可選的雙語 Function metadata 使用 registry 的 `function` object，包含 `en` 與
 `zh-TW` 值。Machine-readable selection output 包含 `task_summary`、帶有簡短理由的
 `selected_skills` 與 `selection_status`，不輸出 PRIMARY/OPTIONAL level 或
-recommendation-only final-selection semantics。
+recommendation-only final-selection semantics。正式 production routing 也會回傳上述
+有界 Selection Receipt。
 
 ## Routing 行為
 
@@ -129,7 +141,7 @@ absolute paths 或 private Plugin inventory。
 Beta scope 包含 read-only runtime discovery、canonical registry merge、inventory/profile
 cache、recall-first retrieval、Codex Skill selection、完整 applicability validation、
 雙語 output 與 bounded validation。Canonical fixture 包含 12 個 scenarios：`zh-TW` 6 個、
-`en` 6 個；完整 suite 包含 81 個 tests，Phase 5 Full Live Acceptance 包含五個案例。
+`en` 6 個；完整 suite 包含 91 個 tests，Integration Live Acceptance 包含四個案例。
 
 Plugin Eval 回報 estimated-static deferred context cost。這不是 measured runtime
 token usage；repository documentation、tests、fixtures 與 implementation artifacts
@@ -185,12 +197,12 @@ examples/
 
 ## Phase 5 證據邊界
 
-Canonical fixture 包含十二個 routing cases；完整 Python regression 包含 81 個 tests，
-Full Live Acceptance 包含五個 runtime cases。Local software tests 不證明硬體、實體
+Canonical fixture 包含十二個 routing cases；完整 Python regression 包含 91 個 tests，
+Integration Live Acceptance 包含四個 runtime cases。Local software tests 不證明硬體、實體
 water-path、外部 capability 或生物效能驗收。
 
 目前 runtime discovery 回報 139 個 malformed Skill diagnostics。這是記錄中的
-non-blocking observation；beta.3 不因 release preparation 擴張 discovery scope 修正它。
+non-blocking observation；beta.4 不因 release preparation 擴張 discovery scope 修正它。
 
 ## Real-world local acceptance
 
@@ -231,4 +243,8 @@ Marketplace submission。
 原始內容：README 仍描述 beta.2 的固定 primary/optional routing 與 46/46 suite。
 修改原因：同步 beta.3 的 Codex final Skill selection contract、81/81 regression 與 Phase 5 Full Live Acceptance。
 修改後功能：文件反映 inventory/profile、recall-first retrieval、完整 SKILL.md applicability、兩種 selection status、無 legacy/silent fallback，以及 139 malformed diagnostics 的 non-blocking 邊界。
+修改紀錄（2026-08-25，Steve Peng）
+原始內容：README 仍標示 beta.3 與 beta.3 validation baseline。
+修改原因：準備 beta.4 release metadata 與 Integration Hardening release notes。
+修改後功能：文件反映 91/91 tests、Integration Live Acceptance 4/4 與 production route、Receipt、canonical ID、finalization 邊界；不改變 production behavior。
 -->
