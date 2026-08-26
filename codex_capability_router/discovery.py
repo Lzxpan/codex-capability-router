@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+import re
 import subprocess
 
 from .models import CapabilityKind, CapabilityRecord, DiscoveryDiagnostic, DiscoveryResult
@@ -29,6 +30,31 @@ _APPROVED_CLI_PROBES = {
         CapabilityKind.MCP,
     ),
 }
+
+_LEGACY_METADATA_SCALAR_KEYS = frozenset(
+    {
+        "short-description",
+        "source_repo",
+        "source_path",
+        "compatibility_note",
+        "source_tools",
+        "trigger",
+        "source",
+    }
+)
+_SENSITIVE_METADATA_KEYS = frozenset(
+    {"api_key", "apikey", "credential", "credentials", "password", "secret", "token"}
+)
+_METADATA_KEY = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
+_SENSITIVE_METADATA_TEXT = re.compile(
+    r"(?:api[_-]?key|password|secret|token|credential)\s*[:=]",
+    re.IGNORECASE,
+)
+
+# 修改紀錄（2026-08-26，Steve Peng）
+# 原始內容：legacy metadata 只要出現 metadata section 就被當成 malformed，導致真實 explain-code 無法 discovery。
+# 修改原因：Phase 1 需要 bounded compatibility normalization，支援安全 legacy scalar、allowed-tools 與唯一一層 source_frontmatter，且不能把舊 metadata 推導成 routing/availability 語意。
+# 修改後功能：先嚴格驗證有限 legacy 結構，再丟棄 compatibility-only metadata；未知 nested、深層結構、敏感值與 malformed input 仍拒絕。
 
 # 修改紀錄（2026-08-25，Steve Peng）：缺少 machine-readable id 時使用明確 entry 名稱；display name 僅供人類顯示。
 
@@ -284,12 +310,18 @@ def _frontmatter(text: str) -> dict[str, object] | None:
         if not separator:
             return None
         normalized_key = key.strip()
-        if not normalized_key or normalized_key in seen_keys:
+        duplicate_key = normalized_key.casefold()
+        if not normalized_key or duplicate_key in seen_keys:
             return None
-        seen_keys.add(normalized_key)
+        seen_keys.add(duplicate_key)
         scalar = value.strip()
-        if normalized_key in {"allowed-tools", "metadata"} and not scalar:
-            index = _skip_ignored_frontmatter_section(lines, index + 1, end, normalized_key)
+        if normalized_key == "allowed-tools":
+            index = _parse_allowed_tools_section(lines, index + 1, end, scalar)
+            if index is None:
+                return None
+            continue
+        if normalized_key == "metadata":
+            index = _parse_legacy_metadata_section(lines, index + 1, end, scalar)
             if index is None:
                 return None
             continue
@@ -355,14 +387,71 @@ def _frontmatter_block_scalar(
     return "\n".join(folded), index
 
 
-def _skip_ignored_frontmatter_section(
+def _parse_allowed_tools_section(
     lines: list[str],
     start: int,
     end: int,
-    section: str,
+    scalar: str,
 ) -> int | None:
-    """驗證並略過目前 skill runtime 會使用、但不進 canonical record 的 section。"""
+    """驗證並略過 simple allowed-tools list，不把工具名帶入 Skill record。"""
 
+    # 支援 bounded inline JSON list 或既有逗號分隔 legacy list；object、純 scalar 與 nested list 一律拒絕。
+    if scalar:
+        parsed = _frontmatter_value(scalar)
+        if isinstance(parsed, list):
+            items = parsed
+        elif isinstance(parsed, str) and "," in parsed:
+            items = [item.strip() for item in parsed.split(",")]
+        else:
+            return None
+        if not items or not all(_safe_legacy_scalar(item) for item in items):
+            return None
+        return start
+
+    if start >= end:
+        return None
+
+    content_indent: int | None = None
+    index = start
+    item_count = 0
+    while index < end:
+        line = lines[index]
+        if not line.strip():
+            index += 1
+            continue
+        if line.startswith("\t"):
+            return None
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            break
+        if content_indent is None:
+            content_indent = indent
+        if indent < content_indent:
+            return None
+        if indent != content_indent:
+            return None
+        content = line[content_indent:]
+        if not content.startswith("- ") or not _safe_legacy_scalar(content[2:].strip()):
+            return None
+        item_count += 1
+        if item_count > 16:
+            return None
+        index += 1
+    if content_indent is None or item_count == 0:
+        return None
+    return index
+
+
+def _parse_legacy_metadata_section(
+    lines: list[str],
+    start: int,
+    end: int,
+    scalar: str,
+) -> int | None:
+    """驗證有限 legacy metadata 與唯一 source_frontmatter nested exception。"""
+
+    if scalar:
+        return None
     content_indent: int | None = None
     index = start
     seen_keys: set[str] = set()
@@ -378,33 +467,105 @@ def _skip_ignored_frontmatter_section(
             break
         if content_indent is None:
             content_indent = indent
-        if indent < content_indent:
+        if indent != content_indent:
             return None
         content = line[content_indent:]
-        if section == "allowed-tools":
-            if not content.startswith("- ") or not content[2:].strip():
+        key, separator, value = content.partition(":")
+        normalized_key = key.strip()
+        key_folded = normalized_key.casefold()
+        if (
+            not _METADATA_KEY.fullmatch(normalized_key)
+            or key_folded in seen_keys
+            or _sensitive_metadata_key(normalized_key)
+        ):
+            return None
+        seen_keys.add(key_folded)
+        nested_value = value.strip()
+        if normalized_key == "source_frontmatter":
+            if nested_value:
                 return None
-        else:
-            nested_key, separator, nested_value = content.partition(":")
-            normalized_key = nested_key.strip()
-            if not separator or not normalized_key or normalized_key in seen_keys or not nested_value.strip():
+            next_index = _parse_source_frontmatter_leaves(lines, index + 1, end, content_indent)
+            if next_index is None:
                 return None
-            seen_keys.add(normalized_key)
+            index = next_index
+            continue
+        if normalized_key not in _LEGACY_METADATA_SCALAR_KEYS or not nested_value:
+            return None
+        if not _safe_legacy_scalar(_frontmatter_value(nested_value)):
+            return None
         index += 1
-    if content_indent is None:
-        return None
-    return index
+    return index if content_indent is not None else None
+
+
+def _parse_source_frontmatter_leaves(
+    lines: list[str],
+    start: int,
+    end: int,
+    parent_indent: int,
+) -> int | None:
+    """只接受 source_frontmatter 下一層的 scalar leaves，拒絕更深結構。"""
+
+    leaf_indent: int | None = None
+    index = start
+    seen_keys: set[str] = set()
+    leaf_count = 0
+    while index < end:
+        line = lines[index]
+        if not line.strip():
+            index += 1
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent <= parent_indent:
+            break
+        if leaf_indent is None:
+            leaf_indent = indent
+        if indent != leaf_indent:
+            return None
+        key, separator, value = line[leaf_indent:].partition(":")
+        normalized_key = key.strip()
+        key_folded = normalized_key.casefold()
+        scalar = value.strip()
+        if (
+            not _METADATA_KEY.fullmatch(normalized_key)
+            or key_folded in seen_keys
+            or _sensitive_metadata_key(normalized_key)
+            or not scalar
+            or not _safe_legacy_scalar(_frontmatter_value(scalar))
+        ):
+            return None
+        seen_keys.add(key_folded)
+        leaf_count += 1
+        if leaf_count > 16:
+            return None
+        index += 1
+    return index if leaf_indent is not None and leaf_count else None
+
+
+def _safe_legacy_scalar(value: object) -> bool:
+    """限制 legacy compatibility 值為 bounded 非空 scalar，拒絕 list/object/secret。"""
+
+    if not isinstance(value, (str, int, float, bool)) or isinstance(value, (bytes, list, dict)):
+        return False
+    text = str(value).strip()
+    return bool(text) and len(text) <= 512 and "\x00" not in text and _SENSITIVE_METADATA_TEXT.search(text) is None
+
+
+def _sensitive_metadata_key(value: str) -> bool:
+    """辨識 nested metadata 的 secret-like key，不回顯其值。"""
+
+    return value.casefold().replace("-", "_") in _SENSITIVE_METADATA_KEYS
 
 
 def _frontmatter_value(value: str) -> object:
     """將 frontmatter 的簡單 scalar/list 轉為 validation 可接受型別。"""
 
-    if value.startswith("[") and value.endswith("]"):
+    if value.startswith(("[", "{")):
         try:
             parsed = json.loads(value)
         except json.JSONDecodeError:
-            return value
-        return parsed
+            return None
+        if isinstance(parsed, (list, dict)):
+            return parsed
     return value.strip().strip('"\'')
 
 

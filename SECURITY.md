@@ -4,7 +4,7 @@
 
 | Version | Supported |
 | --- | --- |
-| `v0.1.0-beta.1` | Yes, public beta |
+| `v0.2.0-beta.1` | Yes, public pre-release |
 
 ## Reporting a vulnerability
 

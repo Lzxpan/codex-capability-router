@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
+from codex_capability_router.route_context import prepare_route_context
 from codex_capability_router.selection import validate_selection
+from codex_capability_router.task_analysis import validate_task_analysis
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +50,35 @@ class Phase3RoutingScenarioTests(unittest.TestCase):
                 self.assertTrue(scenario["category"].strip())
                 self.assertNotIn("skill_id", scenario)
                 self.assertNotIn("selected_skills", scenario)
+
+    def test_scenarios_migrate_to_mandatory_task_analysis_context(self) -> None:
+        """12 個既有案例改用正式 TaskAnalysis，仍不加入 Skill/Provider mapping。"""
+
+        # 修改紀錄（2026-08-26，Steve Peng）
+        # 原始內容：scenario 僅驗證 task/category 字串，未覆蓋 v0.2 mandatory TaskAnalysis。
+        # 修改原因：Phase 2 必須讓 Skill-side context 以正式 immutable TaskAnalysis 為輸入。
+        # 修改後功能：每個既有案例只建立 TaskAnalysis 並準備 Skill-only context，不做 semantic selection。
+        with tempfile.TemporaryDirectory() as temporary:
+            empty_root = Path(temporary)
+            for scenario in self.scenarios:
+                with self.subTest(scenario=scenario["id"]):
+                    analysis = validate_task_analysis(
+                        {
+                            "task_summary": scenario["task"],
+                            "work_items": [scenario["category"]],
+                            "deliverables": [],
+                            "constraints": [],
+                            "quality_expectations": [],
+                        }
+                    )
+                    context = prepare_route_context(
+                        analysis,
+                        skill_roots=(empty_root,),
+                        work_parts=(scenario["category"],),
+                    )
+                    self.assertEqual(context.task_analysis, analysis)
+                    self.assertEqual(context.task_summary, scenario["task"])
+                    self.assertEqual(context.candidates, ())
 
     def test_no_matching_schema_is_deterministic_for_all_scenarios(self) -> None:
         """Python 只驗證合法 empty output，不模擬語意匹配結果。"""

@@ -1,25 +1,41 @@
 # Codex Capability Router
 
-版本：`v0.1.0-beta.4`
+版本：`v0.2.0-beta.1`
 狀態：**Beta / Pre-release（公開測試版）**
 
-Codex Capability Router v0.1.0-beta.4 是 local-first、context-first、read-only 的
-capability recommendation skill，提供有界 runtime discovery、profile-based candidate
-retrieval、由 Codex 協助的 final Skill selection 與雙語輸出。
+Codex Capability Router v0.2.0-beta.1 是 local-first、context-first、read-only 的
+Router，先由 Codex LLM TaskAnalysis 理解完整工作，再將方法型 Skill 與目前可直接
+呼叫的 Supporting Provider 分層處理。
 
-本版本已通過完整 regression suite：**91/91 tests pass**，且 Integration Live
-Acceptance 四個案例全部 PASS。compile、UTF-8/U+FFFD、diff 與 production source
-check 也全部通過。Canonical routing fixture 仍為 12 個 scenarios（`zh-TW` 6 個、
-`en` 6 個）。Plugin Eval 目前回報 static deferred-context estimate；該估計包含
-repository artifacts，並不是 measured runtime token consumption。正式升級為 stable
-`v0.1.0` 前，仍必須取得 empirical runtime token measurement。
+Phase 1–5 deterministic implementation 已完成：目前完整 suite 為 **137/137 PASS**，
+Codex Live Acceptance A–E 也通過。這是 pre-release；Live Acceptance 期間 Host 沒有
+提供 Router 可採信的 Skill availability declaration，App 仍為
+`INSUFFICIENT_RUNTIME_EVIDENCE`，Plugin 仍為 `NO_RUNTIME_SAMPLE`，Supporting Provider
+正式範圍仍有限。
 
-另有一個獨立 STM32G0 firmware workspace 已完成 real-world local acceptance，
-驗證 automatic/explicit routing、workspace-specific specialist preference、
-route-only selection、downstream execution，以及 PASS/FAIL/BLOCKED/
-HARDWARE_PENDING 的 evidence boundaries。私有專案細節刻意不公開。
+## v0.2.0-beta.1 新增內容
 
-## v0.1.0-beta.4 整合強化
+- LLM TaskAnalysis 以 immutable strict contract 產生 `task_summary`、`work_items`、
+  `deliverables`、`constraints` 與 `quality_expectations`。
+- Skill 回答「工作應該怎麼做」；Supporting Provider 回答「目前可直接呼叫的執行
+  能力是什麼」。
+- `prepare_route_context()` 是 read-only、stateless、deterministic、Skill-only；
+  `execution_needs=[]` 時完全不掃描 Supporting Provider、不做 readiness normalization、
+  不建立 digest。
+- `prepare_supporting_context()` 只接受通過 runtime evidence certification 的 exact
+  instance。目前 formal scope 僅為 MCP `node_repl` 與 builtin provider-equivalent
+  `functions.exec_command`。
+- Provider 語意選擇由 Codex 決定；Python 只做 schema、identity、readiness、fingerprint、
+  privacy 與 finalization validation。
+- 只有一條 production `route()` 能建立 v0.2 Receipt 並進入 `FINALIZED`；完成後不可
+  修改。Skill status 與 Supporting status 維持獨立，no-match 也是合法結果。
+- `explain-code` legacy frontmatter 採 bounded compatibility normalization，不放寬
+  malformed、sensitive 或 unavailable gate。
+
+App、Plugin、未 certification 的 MCP instance 與 builtin tool 都不是 formal production
+scope；不會被猜測、推薦、自動安裝、自動授權或 silent fallback。
+
+## Historical v0.1.0-beta.4 整合強化
 
 本版本不取代 beta.3 的語意 Skill Selection 設計，只強化整合邊界：
 
@@ -30,7 +46,7 @@ HARDWARE_PENDING 的 evidence boundaries。私有專案細節刻意不公開。
 
 beta.3 的 Codex 語意選擇、recall-first retrieval、Profile 與 Expanded Retrieval/Correction 次數上限保持不變。
 
-## 目前 v0.1.0 邊界
+## Historical v0.1.0 邊界
 
 目前實作接受 runtime 可見的 inventory、核准的 skill roots、canonical registry
 records 與 user task。系統會驗證 records、建立 inventory fingerprint 與
@@ -62,6 +78,9 @@ registry 與可解釋的 advisory recommendations。
 - 由 Codex 根據工作語意決定 final Skill。新版 contract 只包含 `selected_skills` 與
   `selection_status`（`selected` 或 `no_matching_skill`），不再有 keyword-to-Skill
   mapping、PRIMARY/OPTIONAL output 或 3+2 limit。
+- 先建立 immutable TaskAnalysis，再於 Skill applicability 完成後產生 Execution Needs。
+- 只有 Execution Needs 非空時才準備 Supporting Provider context；final Provider decision
+  由 `route()` 驗證並 finalize。
 
 ## Skill 不會做什麼
 
@@ -136,18 +155,20 @@ Routing 完成後，human-readable output 會包含已選 Skill ID 與簡短 Cod
 API keys、tokens、passwords、OAuth credentials、private account data、raw personal
 absolute paths 或 private Plugin inventory。
 
-## 已知限制與 v0.1 scope
+## 已知限制與 v0.2.0-beta.1 scope
 
-Beta scope 包含 read-only runtime discovery、canonical registry merge、inventory/profile
-cache、recall-first retrieval、Codex Skill selection、完整 applicability validation、
-雙語 output 與 bounded validation。Canonical fixture 包含 12 個 scenarios：`zh-TW` 6 個、
-`en` 6 個；完整 suite 包含 91 個 tests，Integration Live Acceptance 包含四個案例。
+目前 pre-release 包含 read-only runtime discovery、canonical registry merge、immutable
+TaskAnalysis、Skill-side context fingerprint、recall-first retrieval、Codex Skill
+selection、lazy Supporting Provider context、bounded finalization、雙語 output 與 bounded
+validation。Canonical fixture 包含 12 個 scenarios：`zh-TW` 6 個、`en` 6 個；完整 suite
+包含 137 個 tests，Codex Live Acceptance 包含五個案例。
 
-Plugin Eval 回報 estimated-static deferred context cost。這不是 measured runtime
-token usage；repository documentation、tests、fixtures 與 implementation artifacts
-都包含在 static estimate 中。目前 measured runtime token usage 仍不可得。Local
-software evidence 也不代表外部 capability execution、hardware behavior 或 physical
-acceptance 已通過。
+v0.2 Live Acceptance 期間 Host 沒有提供 Router 可採信的 Skill availability declaration。
+Formal Supporting Provider scope 僅限 certified instance `node_repl` 與
+`functions.exec_command`；App 為 `INSUFFICIENT_RUNTIME_EVIDENCE`，Plugin 為
+`NO_RUNTIME_SAMPLE`，其他 MCP/builtin provider 不會自動被信任。Detail expansion 已由
+deterministic tests 覆蓋，但五個 live case 沒有自然觸發；live destructive stale mutation
+刻意未執行。
 
 Deferred features 包含 capability execution、安裝/管理、permission mutation、remote
 discovery、private inventory persistence、account integration、telemetry、GUI/service
@@ -170,10 +191,10 @@ python -m codex_capability_router.catalog --input tests/fixtures/routing_registr
 
 理由是簡短且可稽核的 selection explanation，不是 hidden reasoning trace。
 
-## Stable release requirement
+## 超越 beta 的後續條件
 
-Stable `v0.1.0` 除了 beta functional 與 privacy gates 外，還需要 empirical runtime
-token measurement；或由獨立證據證明實際 loading model 並建立可接受的 bounded budget。
+若要超越本 beta，仍需取得可供 Router 採信的 Skill availability runtime evidence，並
+擴大 Provider certification；本版本不宣稱 stable `v0.2.0` 或 universal Provider support。
 
 ## Repository 結構
 
@@ -197,8 +218,8 @@ examples/
 
 ## Phase 5 證據邊界
 
-Canonical fixture 包含十二個 routing cases；完整 Python regression 包含 91 個 tests，
-Integration Live Acceptance 包含四個 runtime cases。Local software tests 不證明硬體、實體
+Canonical fixture 包含十二個 routing cases；完整 Python regression 包含 137 個 tests，
+Codex Live Acceptance 包含五個 runtime cases。Local software tests 不證明硬體、實體
 water-path、外部 capability 或生物效能驗收。
 
 目前 runtime discovery 回報 139 個 malformed Skill diagnostics。這是記錄中的
@@ -247,4 +268,8 @@ Marketplace submission。
 原始內容：README 仍標示 beta.3 與 beta.3 validation baseline。
 修改原因：準備 beta.4 release metadata 與 Integration Hardening release notes。
 修改後功能：文件反映 91/91 tests、Integration Live Acceptance 4/4 與 production route、Receipt、canonical ID、finalization 邊界；不改變 production behavior。
+修改紀錄（2026-08-26，Steve Peng）
+原始內容：README 仍以 beta.4 為 current release 說明。
+修改原因：v0.2.0-beta.1 release preparation 需要公開 TaskAnalysis、lazy Supporting scope 與真實限制。
+修改後功能：文件反映 137/137 regression、Live Acceptance A–E、正式 Provider instance scope 與 privacy/finalization 邊界。
 -->

@@ -97,6 +97,7 @@ class FoundationStructureTests(unittest.TestCase):
         english = _read_utf8("README.md")
         traditional_chinese = _read_utf8("README.zh-TW.md")
         for content in (english, traditional_chinese):
+            self.assertIn("0.2.0-beta.1", content)
             self.assertIn("0.1.0", content)
             self.assertIn("read-only", content.lower())
             self.assertIn("network", content.lower())
@@ -106,6 +107,7 @@ class FoundationStructureTests(unittest.TestCase):
         """授權與變更紀錄檔案必須可供公開 repository 使用。"""
 
         self.assertIn("MIT License", _read_utf8("LICENSE"))
+        self.assertIn("0.2.0-beta.1", _read_utf8("CHANGELOG.md"))
         self.assertIn("0.1.0", _read_utf8("CHANGELOG.md"))
 
     def test_package_metadata_has_no_runtime_dependency(self) -> None:
@@ -113,11 +115,11 @@ class FoundationStructureTests(unittest.TestCase):
 
         metadata = _read_utf8("pyproject.toml")
         self.assertIn('name = "codex-capability-router"', metadata)
-        # 修改紀錄（2026-08-25，Steve Peng）
-        # 原始內容：測試固定期待 beta.3 package metadata。
-        # 修改原因：beta.4 release preparation 更新版本 metadata 後，regression test 必須驗證同一版本。
-        # 修改後功能：測試確認 pyproject 使用 v0.1.0-beta.4，且不改變 runtime dependency 邊界。
-        self.assertIn('version = "0.1.0-beta.4"', metadata)
+        # 修改紀錄（2026-08-26，Steve Peng）
+        # 原始內容：測試固定期待 beta.4 package metadata。
+        # 修改原因：v0.2.0-beta.1 release preparation 更新版本 metadata 後，regression test 必須驗證同一版本。
+        # 修改後功能：測試確認 pyproject 使用 v0.2.0-beta.1，且不改變 runtime dependency 邊界。
+        self.assertIn('version = "0.2.0-beta.1"', metadata)
         self.assertIn("dependencies = []", metadata)
 
     def test_package_exports_version_without_execution(self) -> None:
@@ -132,13 +134,13 @@ class FoundationStructureTests(unittest.TestCase):
         # 原始內容：測試固定期待 beta.1 package metadata。
         # 修改原因：beta.3 release preparation 更新版本 metadata 後，regression test 必須驗證同一版本。
         # 修改後功能：測試確認 package 匯出 v0.1.0-beta.3，且不改變 no-execution 邊界。
-        # 修改紀錄（2026-08-25，Steve Peng）
-        # 原始內容：測試固定期待 beta.3 package metadata。
-        # 修改原因：beta.4 release preparation 更新版本 metadata 後，regression test 必須驗證同一版本。
-        # 修改後功能：測試確認 package 匯出 v0.1.0-beta.4，且不改變 no-execution 邊界。
+        # 修改紀錄（2026-08-26，Steve Peng）
+        # 原始內容：測試固定期待 beta.4 package metadata。
+        # 修改原因：v0.2.0-beta.1 release preparation 更新版本 metadata 後，regression test 必須驗證同一版本。
+        # 修改後功能：測試確認 package 匯出 v0.2.0-beta.1，且不改變 no-execution 邊界。
 
         package = importlib.import_module("codex_capability_router")
-        self.assertEqual(package.__version__, "0.1.0-beta.4")
+        self.assertEqual(package.__version__, "0.2.0-beta.1")
         allowed_submodules = {
             "models",
             "validation",
@@ -148,12 +150,49 @@ class FoundationStructureTests(unittest.TestCase):
             "catalog",
             "inventory",
             "selection",
+            # 修改紀錄（2026-08-26，Steve Peng）：Phase 1 新增 immutable TaskAnalysis contract module。
+            # 修改原因：package import 會正常暴露已載入的 task_analysis 子模組，foundation allowlist 必須同步公開骨架而不放寬其他未知模組。
+            # 修改後功能：接受 task_analysis module binding，維持 no-execution export boundary。
+            "task_analysis",
+            # 修改紀錄（2026-08-26，Steve Peng）：Phase 2 新增 Skill-only route_context contract module。
+            # 修改原因：foundation export boundary 必須辨識正式 context module，但不允許 Provider 或第二 route module 偷渡。
+            # 修改後功能：接受 route_context module binding，維持 package no-execution 邊界。
+            "route_context",
+            # 修改紀錄（2026-08-26，Steve Peng）：Phase 3 新增 lazy supporting_context contract module。
+            # 修改原因：foundation export boundary 必須辨識 readiness/digest context，但不允許 Provider execution 或第二 route 偷渡。
+            # 修改後功能：接受 supporting_context module binding，維持 package no-execution 邊界。
+            "supporting_context",
             "SelectionRouteInput",
             "__all__",
             "classify_capability",
             "classify_task",
             "deduplicate_registry",
             "route",
+            "TaskAnalysis",
+            "validate_task_analysis",
+            "ValidatedDecisionPayloads",
+            "prepare_route_context",
+            "validate_decision_payloads",
+            "ExecutionNeed",
+            # 修改紀錄（2026-08-26，Steve Peng）：Phase 4 新增 immutable Supporting decision protocol exports。
+            # 修改原因：正式 route contract 與 synthetic tests 需要使用同一組 schema foundation。
+            # 修改後功能：公開 decision/detail/final selection validators，不新增 execution 或第二 route。
+            "SupportingCapabilitySelection",
+            "UnmetExecutionNeed",
+            "SupportingFinalSelection",
+            "SupportingDetailRequest",
+            "SupportingDecisionPayload",
+            "SupportingToolDeclaration",
+            "SupportingProviderDeclaration",
+            "ReadinessEvidenceCertificate",
+            "ProviderDigest",
+            "ProviderDetailReference",
+            "SupportingRouteContext",
+            "prepare_supporting_context",
+            "normalize_execution_needs",
+            "validate_supporting_decision",
+            "validate_supporting_final_selection_payload",
+            "supporting_selection_status",
         }
         self.assertEqual(
             set(package.__dict__)

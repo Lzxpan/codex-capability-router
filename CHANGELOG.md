@@ -2,6 +2,76 @@
 
 All notable changes to `codex-capability-router` are documented here.
 
+## v0.2.0-beta.1
+
+Pre-release for the LLM TaskAnalysis and Supporting Capability Selection
+architecture. This release keeps the beta.4 route, Receipt, lifecycle, and
+Skill semantics while adding a bounded lazy Supporting Provider path.
+
+### Added
+
+- Immutable strict LLM TaskAnalysis with `task_summary`, `work_items`,
+  `deliverables`, `constraints`, and `quality_expectations`.
+- Skill-only `prepare_route_context()` with deterministic fingerprints and
+  validated `validated_decision_payloads`.
+- Execution Needs and true-lazy `prepare_supporting_context()`.
+- Provider-level Supporting decision contracts with
+  `ReadinessEvidenceCertificate`, deterministic Provider digests, and one
+  bounded `request_detail` / `final_selection` protocol.
+- v0.2 Receipt fields for TaskAnalysis, Execution Needs, Supporting status,
+  Provider readiness, fingerprints, metrics, and bounded detail references.
+- Formal Supporting scope for the certified instances MCP `node_repl` and
+  builtin-equivalent `functions.exec_command`.
+
+### Changed
+
+- The v0.2 production path requires TaskAnalysis; legacy `task_summary` is a
+  compatibility projection and must match it.
+- `route()` finalizes Skill and Supporting decisions together; it remains the
+  only formal Receipt and `FINALIZED` entry point.
+- Supporting Provider discovery is skipped entirely when
+  `execution_needs=[]`.
+- The existing 12 Skill routing scenarios remain exactly 6 `zh-TW` and 6
+  `en`, migrated to the mandatory TaskAnalysis input contract.
+
+### Fixed
+
+- Bounded legacy frontmatter normalization for `explain-code`.
+- Compatibility parsing for scalar/block metadata, simple `allowed-tools`
+  lists, limited scalar metadata, and one safe scalar-leaf level under
+  `metadata.source_frontmatter`.
+- Malformed, sensitive, unavailable, controller, routing-support, and unsafe
+  records remain rejected.
+
+### Verified
+
+- Phase 1 focused: **30/30 PASS**; Phase 1 full: **102/102 PASS**.
+- Phase 2 focused: **43/43 PASS**; Phase 2 full: **111/111 PASS**.
+- Phase 3 focused: **36/36 PASS**; Phase 3 full: **123/123 PASS**.
+- Phase 4 focused: **14/14 PASS**; Phase 4 full: **137/137 PASS**.
+- Phase 5 deterministic full: **137/137 PASS**.
+- Phase 5 focused Phase 1–4: **45/45 PASS**.
+- Codex Live Acceptance A–E: **PASS**.
+- Positive Provider selection: `mcp:node_repl` and
+  `builtin_tool:functions.exec_command`.
+- Lazy `not_required` path: **PASS**; no-match path: **PASS**;
+  Receipt/privacy: **PASS**.
+
+### Known limitations
+
+- The current Host did not expose a Router-trusted Skill availability
+  declaration during v0.2 Live Acceptance.
+- Formal Supporting Provider scope is limited to certified instances.
+- App remains `INSUFFICIENT_RUNTIME_EVIDENCE`.
+- Plugin remains `NO_RUNTIME_SAMPLE`.
+- Other MCP and builtin providers are not automatically trusted.
+- Supporting detail expansion was covered deterministically but was not
+  naturally triggered in the five Live Acceptance cases.
+- Live destructive stale mutation was intentionally not performed.
+
+This is a pre-release preparation only. No tag, GitHub Release, push, or
+release commit is created by this change.
+
 ## v0.1.0-beta.4
 
 Integration hardening release. This release does not replace the beta.3

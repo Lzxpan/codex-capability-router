@@ -1,27 +1,45 @@
 # Codex Capability Router
 
-Version: `v0.1.0-beta.4`
+Version: `v0.2.0-beta.1`
 Status: **Beta / Pre-release**
 
-Codex Capability Router v0.1.0-beta.4 is a local-first, context-first, read-only
-capability recommendation skill with bounded runtime discovery, profile-based
-candidate retrieval, Codex-assisted final Skill selection, and bilingual output.
+Codex Capability Router v0.2.0-beta.1 is a local-first, context-first,
+read-only Router that first uses Codex LLM TaskAnalysis to understand the full
+work request, then separates method Skills from currently callable Supporting
+Providers.
 
-This release has passed the full regression suite: **91/91 tests pass**, and
-Integration Live Acceptance passes all four cases. Compile, UTF-8/U+FFFD,
-diff, and production-source checks also pass. The canonical routing fixture
-remains 12 scenarios (6 `zh-TW`, 6 `en`). Plugin Eval currently reports a
-static deferred-context estimate; that estimate includes repository artifacts
-and is not measured runtime token consumption. Empirical runtime token
-measurement remains a requirement before promotion to stable `v0.1.0`.
+Phase 1–5 deterministic implementation is complete: the current full suite is
+**137/137 PASS**, and Codex Live Acceptance A–E is PASS. This is a pre-release;
+the Host did not expose a Router-trusted Skill availability declaration during
+live acceptance, App remains `INSUFFICIENT_RUNTIME_EVIDENCE`, Plugin remains
+`NO_RUNTIME_SAMPLE`, and formal Supporting Provider scope is limited.
 
-Real-world local acceptance has also completed successfully in one independent
-STM32G0 firmware workspace. It verified automatic and explicit routing,
-workspace-specific specialist preference, route-only selection, downstream
-execution, and the PASS/FAIL/BLOCKED/HARDWARE_PENDING evidence boundaries.
-Private project details are intentionally omitted.
+## What v0.2.0-beta.1 adds
 
-## What v0.1.0-beta.4 hardens
+- LLM TaskAnalysis produces `task_summary`, `work_items`, `deliverables`,
+  `constraints`, and `quality_expectations` as an immutable strict contract.
+- Skills answer **how to do the work**; Supporting Providers answer **which
+  currently callable runtime capability can execute part of it**.
+- `prepare_route_context()` is read-only, deterministic, stateless, and
+  Skill-only. Supporting discovery is truly lazy: when `execution_needs=[]`,
+  no Supporting Provider discovery, readiness normalization, or digest work is
+  performed.
+- `prepare_supporting_context()` accepts only runtime-evidence-certified exact
+  instances. Current formal scope is MCP `node_repl` and builtin-equivalent
+  `functions.exec_command`.
+- Provider semantic selection remains a Codex decision. Python performs only
+  schema, identity, readiness, fingerprint, privacy, and finalization checks.
+- One production `route()` creates the v0.2 Receipt and moves the route to
+  `FINALIZED`; finalized decisions are immutable. Skill and Supporting status
+  remain independent, including no-match results.
+- `explain-code` legacy frontmatter receives bounded compatibility
+  normalization without weakening malformed, sensitive, or unavailable gates.
+
+App, Plugin, uncertified MCP instances, and uncertified builtin tools are not
+formal production scope. They are not guessed, recommended, auto-installed,
+auto-authorized, or used as silent fallback.
+
+## Historical v0.1.0-beta.4 baseline
 
 This release does not replace the beta.3 semantic selection design. It hardens
 the integration boundary:
@@ -40,7 +58,7 @@ The beta.3 semantic selection core—Codex task-meaning selection, recall-first
 retrieval, profiles, and bounded Expanded Retrieval/Correction limits—remains
 unchanged.
 
-## Current v0.1.0 boundary
+## Historical v0.1.0 boundary
 
 The implementation accepts the runtime-visible inventory, approved skill roots,
 canonical registry records, and a user task. It validates records, builds
@@ -73,6 +91,10 @@ into a runtime-scoped registry and explainable advisory recommendations.
 - Lets Codex select Skills from task meaning. The final contract contains only
   `selected_skills` and `selection_status` (`selected` or `no_matching_skill`);
   it has no keyword-to-Skill mapping, PRIMARY/OPTIONAL output, or 3+2 limit.
+- Builds immutable TaskAnalysis before Skill routing and derives Execution
+  Needs only after Skill applicability is complete.
+- Runs Supporting Provider preparation only when Execution Needs are non-empty;
+  the final Provider decision is provider-level and validated by `route()`.
 
 ## What the skill does NOT do
 
@@ -162,20 +184,22 @@ diagnostics do not echo rejected sensitive values. The implementation stores
 or emits no API keys, tokens, passwords, OAuth credentials, private account
 data, raw personal absolute paths, or private Plugin inventory.
 
-## Known limitations and v0.1 scope
+## Known limitations and v0.2.0-beta.1 scope
 
-The beta scope is read-only runtime discovery, canonical registry merge,
-inventory/profile caching, recall-first retrieval, Codex-driven Skill selection,
-full applicability validation, bilingual output, and bounded validation. The
+The current pre-release includes read-only runtime discovery, canonical
+registry merge, immutable TaskAnalysis, Skill-side context fingerprints,
+recall-first retrieval, Codex-driven Skill selection, lazy Supporting Provider
+context, bounded finalization, bilingual output, and bounded validation. The
 canonical fixture contains 12 scenarios: 6 `zh-TW` and 6 `en`; the full suite
-contains 91 tests and Integration Live Acceptance contains four cases.
+contains 137 tests and Live Acceptance contains five cases.
 
-Plugin Eval reports an estimated-static deferred context cost. This figure is
-not measured runtime token usage; repository documentation, tests, fixtures,
-and implementation artifacts are included in that static estimate. Measured
-runtime token usage remains unavailable. Local software evidence also does
-not prove external capability execution, hardware behavior, or physical
-acceptance.
+The Host did not expose a Router-trusted Skill availability declaration during
+v0.2 Live Acceptance. Formal Supporting Provider scope is limited to the
+certified instances `node_repl` and `functions.exec_command`; App is
+`INSUFFICIENT_RUNTIME_EVIDENCE`, Plugin is `NO_RUNTIME_SAMPLE`, and other
+MCP/builtin providers are not automatically trusted. Detail expansion was
+covered deterministically but did not naturally trigger in the five cases.
+Live destructive stale mutation was intentionally not performed.
 
 Deferred features include capability execution, installation/management,
 permission mutation, remote discovery, private inventory persistence, account
@@ -200,11 +224,11 @@ For a task such as `Fix the React component UI bug.`, the selection output inclu
 The reason is a concise, auditable selection explanation; it is not a hidden
 reasoning trace.
 
-## Stable release requirement
+## Promotion beyond beta requirement
 
-Stable `v0.1.0` requires empirical runtime token measurement (or independent
-evidence of the actual loading model with an acceptable bounded budget), in
-addition to the beta functional and privacy gates.
+Promotion beyond this beta requires continued runtime evidence for Skill
+availability and broader Provider certification; this release does not claim
+stable `v0.2.0` or universal Provider support.
 
 ## Repository layout
 
@@ -229,7 +253,7 @@ deliberately small. They do not grant execution or installation authority.
 ## Phase 5 evidence boundary
 
 The canonical fixture contains twelve routing cases, while the full Python
-regression contains 91 tests and Integration Live Acceptance contains four runtime
+regression contains 137 tests and Codex Live Acceptance contains five runtime
 cases. Local software tests do not prove hardware, physical water-path,
 external capability, or biological acceptance.
 
@@ -281,4 +305,8 @@ Marketplace submission.
 原始內容：README 仍標示 beta.3 與 beta.3 validation baseline。
 修改原因：準備 beta.4 release metadata 與 Integration Hardening release notes。
 修改後功能：文件反映 91/91 tests、Integration Live Acceptance 4/4 與 production route、Receipt、canonical ID、finalization 邊界；不改變 production behavior。
+修改紀錄（2026-08-26，Steve Peng）
+原始內容：README 仍以 beta.4 為 current release 說明。
+修改原因：v0.2.0-beta.1 release preparation 需要公開 TaskAnalysis、lazy Supporting scope 與真實限制。
+修改後功能：文件反映 137/137 regression、Live Acceptance A–E、正式 Provider instance scope 與 privacy/finalization 邊界。
 -->
