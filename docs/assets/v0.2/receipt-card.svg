@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1050" height="650" viewBox="0 0 1050 650" role="img" aria-labelledby="title desc">
+  <title id="title">Receipt v0.2 示意</title>
+  <desc id="desc">Receipt 保存公開決策結果與 fingerprint，不保存私人推理。</desc>
+  <rect width="1050" height="650" fill="#f8fafc"/>
+  <style>.card{fill:#fff;stroke:#334155;stroke-width:2;rx:16}.head{fill:#0f766e}.label{font-family:'Segoe UI','Microsoft JhengHei','PingFang TC','Noto Sans TC','Noto Sans CJK TC',Arial,sans-serif;fill:#fff;font-size:21px;font-weight:700}.txt{font-family:'Segoe UI','Microsoft JhengHei','PingFang TC','Noto Sans TC','Noto Sans CJK TC',Arial,sans-serif;fill:#1f2937;font-size:19px}.safe{fill:#ecfdf5;stroke:#047857;stroke-width:2;rx:14}.no{fill:#fff1f2;stroke:#be123c;stroke-width:2;rx:14}.privacy{font-family:'Segoe UI','Microsoft JhengHei','PingFang TC','Noto Sans TC','Noto Sans CJK TC',Arial,sans-serif;fill:#1f2937;font-size:16px}</style>
+  <text x="525" y="42" text-anchor="middle" class="txt" font-size="30" font-weight="700">Receipt v0.2：可稽核，不是對話紀錄</text>
+  <rect x="55" y="75" width="940" height="420" class="card"/>
+  <rect x="80" y="105" width="215" height="58" class="head" rx="12"/><text x="187" y="142" text-anchor="middle" class="label">TaskAnalysis</text><text x="325" y="142" class="txt">公開結構化工作理解</text>
+  <rect x="80" y="180" width="215" height="58" class="head" rx="12"/><text x="187" y="217" text-anchor="middle" class="label">selected Skills</text><text x="325" y="217" class="txt">ID + concise reason</text>
+  <rect x="80" y="255" width="215" height="58" class="head" rx="12"/><text x="187" y="292" text-anchor="middle" class="label">Execution Needs</text><text x="325" y="292" class="txt">need + reason</text>
+  <rect x="80" y="330" width="215" height="58" class="head" rx="12"/><text x="187" y="367" text-anchor="middle" class="label">Supporting</text><text x="325" y="367" class="txt">Provider + purpose / unmet</text>
+  <rect x="80" y="405" width="215" height="58" class="head" rx="12"/><text x="187" y="442" text-anchor="middle" class="label">Fingerprints</text><text x="325" y="442" class="txt">context / digest / evidence</text>
+  <rect x="645" y="150" width="300" height="105" class="safe"/><text x="795" y="190" text-anchor="middle" class="txt">selection_state</text><text x="795" y="225" text-anchor="middle" class="txt" font-size="27" font-weight="700">FINALIZED</text>
+  <rect x="645" y="290" width="300" height="130" class="no"/><text x="795" y="325" text-anchor="middle" class="txt">不保存</text><text x="795" y="355" text-anchor="middle" class="privacy">raw prompt / chain-of-thought</text><text x="795" y="380" text-anchor="middle" class="privacy">credentials / full schema</text><text x="795" y="405" text-anchor="middle" class="privacy">private files / paths</text>
+  <text x="525" y="560" text-anchor="middle" class="txt">同一工作完成驗證後由 route() 一次建立；FINALIZED 後不可修改。</text>
+</svg>

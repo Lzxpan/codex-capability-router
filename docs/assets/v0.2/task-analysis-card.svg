@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="650" viewBox="0 0 1100 650" role="img" aria-labelledby="title desc">
+  <title id="title">TaskAnalysis 五個欄位</title>
+  <desc id="desc">以 firmware 文件工作為例，展示 TaskAnalysis 的五個自然語言欄位。</desc>
+  <rect width="1100" height="650" fill="#f8fafc"/>
+  <style>
+    .card{fill:#fff;stroke:#334155;stroke-width:2;rx:14}.head{fill:#0f766e}
+    .label{font-family:'Segoe UI','Microsoft JhengHei','PingFang TC','Noto Sans TC','Noto Sans CJK TC',Arial,sans-serif;fill:#fff;font-size:22px;font-weight:700}
+    .body{font-family:'Segoe UI','Microsoft JhengHei','PingFang TC','Noto Sans TC','Noto Sans CJK TC',Arial,sans-serif;fill:#1f2937;font-size:19px}
+    .small{font-family:'Segoe UI','Microsoft JhengHei','PingFang TC','Noto Sans TC','Noto Sans CJK TC',Arial,sans-serif;fill:#475569;font-size:17px}
+  </style>
+  <text x="550" y="42" text-anchor="middle" class="body" font-size="30" font-weight="700">TaskAnalysis：LLM 描述完整工作</text>
+  <rect x="45" y="75" width="480" height="95" class="card"/><rect x="45" y="75" width="180" height="95" class="head" rx="14"/><text x="135" y="132" text-anchor="middle" class="label">task_summary</text><text x="250" y="112" class="body">分析 firmware source，</text><text x="250" y="142" class="body">建立可追溯技術文件。</text>
+  <rect x="575" y="75" width="480" height="95" class="card"/><rect x="575" y="75" width="180" height="95" class="head" rx="14"/><text x="665" y="132" text-anchor="middle" class="label">work_items</text><text x="780" y="112" class="body">source tracing、API / state</text><text x="780" y="142" class="body">理解、流程與驗證。</text>
+  <rect x="45" y="195" width="480" height="95" class="card"/><rect x="45" y="195" width="180" height="95" class="head" rx="14"/><text x="135" y="252" text-anchor="middle" class="label">deliverables</text><text x="250" y="232" class="body">DOCX、圖表、API 表、</text><text x="250" y="262" class="body">參數表與 findings。</text>
+  <rect x="575" y="195" width="480" height="95" class="card"/><rect x="575" y="195" width="180" height="95" class="head" rx="14"/><text x="665" y="252" text-anchor="middle" class="label">constraints</text><text x="780" y="232" class="body">source-only、read-only，</text><text x="780" y="262" class="body">推論必須標示為推論。</text>
+  <rect x="45" y="315" width="1010" height="95" class="card"/><rect x="45" y="315" width="250" height="95" class="head" rx="14"/><text x="170" y="372" text-anchor="middle" class="label">quality_expectations</text><text x="325" y="352" class="body">圖表清楚、版面易讀、source evidence 可追蹤、</text><text x="325" y="382" class="body">硬體未確認處不冒充已驗證事實。</text>
+  <rect x="45" y="455" width="1010" height="125" fill="#ecfeff" stroke="#0e7490" stroke-width="2" rx="14"/><text x="70" y="505" class="body">LLM 產生完整工作的結構化理解</text><text x="70" y="548" class="body">Python 只驗證 schema 與 immutable 邊界，不建立固定 task taxonomy</text>
+</svg>

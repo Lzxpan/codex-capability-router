@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560" role="img" aria-labelledby="title desc">
+  <title id="title">Skill 與 Supporting Provider 分層</title>
+  <desc id="desc">Skill 回答怎麼做，Supporting Provider 回答目前可用什麼執行能力；兩者不共用 ranking。</desc>
+  <rect width="1100" height="560" fill="#f8fafc"/>
+  <style>
+    .panel{stroke-width:3;rx:18}.skill{fill:#fff7ed;stroke:#c2410c}.provider{fill:#eef2ff;stroke:#4338ca}
+    .h{font-family:'Segoe UI','Microsoft JhengHei','PingFang TC','Noto Sans TC','Noto Sans CJK TC',Arial,sans-serif;font-size:30px;font-weight:700;text-anchor:middle;fill:#111827}
+    .k{font-family:'Segoe UI','Microsoft JhengHei','PingFang TC','Noto Sans TC','Noto Sans CJK TC',Arial,sans-serif;font-size:23px;text-anchor:middle;fill:#1f2937}
+    .s{font-family:'Segoe UI','Microsoft JhengHei','PingFang TC','Noto Sans TC','Noto Sans CJK TC',Arial,sans-serif;font-size:18px;text-anchor:middle;fill:#475569}
+    .arrow{stroke:#64748b;stroke-width:4;marker-end:url(#a)}
+  </style>
+  <defs><marker id="a" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto"><path d="M0,0 L12,4 L0,8 Z" fill="#64748b"/></marker></defs>
+  <text x="550" y="45" class="h">Skill 與 Supporting Provider 分層</text>
+  <rect x="55" y="90" width="440" height="360" class="panel skill"/><text x="275" y="145" class="h">Skill</text><text x="275" y="185" class="k">How / 方法</text><line x1="105" y1="215" x2="445" y2="215" stroke="#fdba74" stroke-width="2"/><text x="275" y="260" class="s">方法、專業流程、工作準則</text><text x="275" y="310" class="k">例如</text><text x="275" y="350" class="s">source analysis</text><text x="275" y="380" class="s">verification</text><text x="275" y="410" class="s">technical writing</text>
+  <rect x="605" y="90" width="440" height="360" class="panel provider"/><text x="825" y="145" class="h">Supporting Provider</text><text x="825" y="185" class="k">Can execute now / 執行能力</text><line x1="655" y1="215" x2="995" y2="215" stroke="#a5b4fc" stroke-width="2"/><text x="825" y="260" class="s">Host callable、已驗證 readiness</text><text x="825" y="310" class="k">目前 beta scope</text><text x="825" y="350" class="s">mcp:node_repl</text><text x="825" y="380" class="s">builtin_tool:functions.exec_command</text><text x="825" y="410" class="s">App / Plugin / 其他 instance 不自動信任</text>
+  <path d="M495 270 H605" class="arrow"/>
+  <text x="550" y="485" class="s">Execution Needs 非空時才進入 Supporting layer</text>
+  <text x="550" y="520" class="s">LLM 判斷 semantic suitability；Python 做 deterministic validation。</text>
+</svg>

@@ -39,6 +39,12 @@ App, Plugin, uncertified MCP instances, and uncertified builtin tools are not
 formal production scope. They are not guessed, recommended, auto-installed,
 auto-authorized, or used as silent fallback.
 
+## Documentation / v0.2
+
+- [Illustrated v0.2 User Guide](docs/v0.2_user_guide.zh-TW.md)
+- [Installed Skill Live Test Report](docs/v0.2_installed_skill_live_test_report.zh-TW.md)
+- [v0.2 Architecture / Design](docs/v0.2_llm_task_analysis_supporting_capability_selection_design.zh-TW.md)
+
 ## Historical v0.1.0-beta.4 baseline
 
 This release does not replace the beta.3 semantic selection design. It hardens

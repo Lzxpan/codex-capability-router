@@ -35,6 +35,12 @@ Codex Live Acceptance A–E 也通過。這是 pre-release；Live Acceptance 期
 App、Plugin、未 certification 的 MCP instance 與 builtin tool 都不是 formal production
 scope；不會被猜測、推薦、自動安裝、自動授權或 silent fallback。
 
+## 文件 / v0.2
+
+- [v0.2 圖文使用指南](docs/v0.2_user_guide.zh-TW.md)
+- [Installed Skill Live Test Report](docs/v0.2_installed_skill_live_test_report.zh-TW.md)
+- [v0.2 Architecture / Design](docs/v0.2_llm_task_analysis_supporting_capability_selection_design.zh-TW.md)
+
 ## Historical v0.1.0-beta.4 整合強化
 
 本版本不取代 beta.3 的語意 Skill Selection 設計，只強化整合邊界：

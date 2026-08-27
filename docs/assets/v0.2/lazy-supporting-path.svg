@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="480" viewBox="0 0 1100 480" role="img" aria-labelledby="title desc">
+  <title id="title">Lazy Supporting Path</title>
+  <desc id="desc">execution_needs 為空時，從 not_required 狀態清楚分支到所有 not_run 準備項目。</desc>
+  <rect width="1100" height="480" fill="#f8fafc"/>
+  <style>
+    .b{fill:#fff;stroke:#334155;stroke-width:2;rx:14}.g{fill:#ecfdf5;stroke:#047857;stroke-width:3;rx:14}.x{fill:#fff1f2;stroke:#be123c;stroke-width:2;rx:14}
+    .t{font-family:'Segoe UI','Microsoft JhengHei','PingFang TC','Noto Sans TC','Noto Sans CJK TC',Arial,sans-serif;fill:#111827;font-size:23px;text-anchor:middle}
+    .s{font-family:'Segoe UI','Microsoft JhengHei','PingFang TC','Noto Sans TC','Noto Sans CJK TC',Arial,sans-serif;fill:#475569;font-size:18px;text-anchor:middle}
+    .l{stroke:#64748b;stroke-width:3;fill:none;marker-end:url(#m)}.branch{stroke:#64748b;stroke-width:3;fill:none}
+  </style>
+  <defs><marker id="m" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto"><path d="M0,0 L12,4 L0,8 Z" fill="#64748b"/></marker></defs>
+  <text x="550" y="42" class="t" font-size="30">C# / 純分析類工作：Provider path 是真正 lazy</text>
+  <rect x="390" y="70" width="320" height="65" class="b"/><text x="550" y="110" class="t">execution_needs = []</text>
+  <path d="M550 135 V180" class="l"/>
+  <rect x="275" y="185" width="550" height="75" class="g"/><text x="550" y="218" class="t">supporting_selection_status</text><text x="550" y="245" class="s">not_required</text>
+  <path d="M550 260 V300" class="l"/>
+  <path d="M150 300 H925" class="branch"/>
+  <path d="M150 300 V335" class="l"/><path d="M400 300 V335" class="l"/><path d="M650 300 V335" class="l"/><path d="M925 300 V335" class="l"/>
+  <rect x="35" y="335" width="230" height="75" class="x"/><text x="150" y="367" class="t">Provider discovery</text><text x="150" y="395" class="s">not_run</text>
+  <rect x="285" y="335" width="230" height="75" class="x"/><text x="400" y="367" class="t">Digest / schema</text><text x="400" y="395" class="s">not_run</text>
+  <rect x="535" y="335" width="230" height="75" class="x"/><text x="650" y="367" class="t">Readiness</text><text x="650" y="395" class="s">not_run</text>
+  <rect x="785" y="335" width="280" height="75" class="x"/><text x="925" y="367" class="t">Metrics counts</text><text x="925" y="395" class="s">0</text>
+</svg>
