@@ -162,6 +162,20 @@ class FoundationStructureTests(unittest.TestCase):
             # 修改原因：foundation export boundary 必須辨識 readiness/digest context，但不允許 Provider execution 或第二 route 偷渡。
             # 修改後功能：接受 supporting_context module binding，維持 package no-execution 邊界。
             "supporting_context",
+            # 修改紀錄（2026-08-31，Steve Peng）：package allowlist 原本未辨識 Host exposure module。
+            # 修改原因：新增 typed Host availability boundary 後，foundation test 必須允許該獨立 module binding。
+            # 修改後功能：只接受 host_exposure module，維持 package no-execution export boundary。
+            "host_exposure",
+            "provider_adapters",
+            # 修改紀錄（2026-08-31，Steve Peng）：Host adapter types 由 package import 暴露後，allowlist 尚未同步。
+            # 修改原因：讓 designated Host orchestration 可使用 typed envelope，而不放寬其他執行能力匯出。
+            # 修改後功能：明確允許 Host exposure validation exports。
+            "HostExposureError",
+            "HostSkillExposureAdapter",
+            "HostSkillExposureEnvelope",
+            "HostSkillExposureRecord",
+            "canonicalize_host_path",
+            "revalidate_host_exposure",
             "SelectionRouteInput",
             "__all__",
             "classify_capability",
@@ -174,6 +188,9 @@ class FoundationStructureTests(unittest.TestCase):
             "prepare_route_context",
             "validate_decision_payloads",
             "ExecutionNeed",
+            "FORMAL_SUPPORTING_PROVIDER_KINDS",
+            "AppReadinessEvidence",
+            "McpReadinessEvidence",
             # 修改紀錄（2026-08-26，Steve Peng）：Phase 4 新增 immutable Supporting decision protocol exports。
             # 修改原因：正式 route contract 與 synthetic tests 需要使用同一組 schema foundation。
             # 修改後功能：公開 decision/detail/final selection validators，不新增 execution 或第二 route。
@@ -183,16 +200,31 @@ class FoundationStructureTests(unittest.TestCase):
             "SupportingDetailRequest",
             "SupportingDecisionPayload",
             "SupportingToolDeclaration",
+            "SupportingToolSummary",
             "SupportingProviderDeclaration",
             "ReadinessEvidenceCertificate",
             "ProviderDigest",
             "ProviderDetailReference",
             "SupportingRouteContext",
+            "PROVIDER_PRESENCE_STATES",
+            "PROVIDER_READINESS_STATES",
+            "PROVIDER_METADATA_STATES",
+            "EXECUTION_OUTCOMES",
+            "ExecutionAttempt",
             "prepare_supporting_context",
             "normalize_execution_needs",
             "validate_supporting_decision",
             "validate_supporting_final_selection_payload",
             "supporting_selection_status",
+            "APP_LIST_METHOD",
+            "APP_INSTALLED_METHOD",
+            "APP_READ_METHOD",
+            "MCP_STATUS_LIST_METHOD",
+            "MCP_STATUS_DETAIL",
+            "ProviderAdapterInventory",
+            "adapt_official_app_inventory",
+            "adapt_official_mcp_inventory",
+            "build_official_provider_requests",
         }
         self.assertEqual(
             set(package.__dict__)

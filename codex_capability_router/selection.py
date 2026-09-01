@@ -17,7 +17,12 @@ from .inventory import (
 )
 from .models import CapabilityKind, CapabilityRecord, CapabilityStatus
 from .routing import _is_controller
+from .task_analysis import TaskAnalysis
 
+# 修改紀錄（2026-08-31，Steve Peng）
+# 原始內容：selection contract 沒有四類 TaskAnalysis supports reference 或 Coverage Check addition schema。
+# 修改原因：coverage-first 需要公開 bounded coverage evidence，並讓 additions 經 existing candidate、handoff 與 applicability gates。
+# 修改後功能：加入 supports/distinct_value validation 與單輪 additions contract；Python 只驗 schema、ID、reference，不判斷語意。
 
 # 修改紀錄（2026-08-21，Steve Peng）
 # 原始內容：Phase 1/2 只有 inventory、profile 與 candidate retrieval，沒有新版 selection contract。
@@ -33,6 +38,7 @@ SELECTION_LIFECYCLES = frozenset({"OPEN", "FINALIZED"})
 _AVAILABLE_STATUSES = frozenset({CapabilityStatus.INSTALLED, CapabilityStatus.AVAILABLE})
 _FINGERPRINT = re.compile(r"^[0-9a-f]{64}$")
 _CANONICAL_SKILL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+_SUPPORT_SECTIONS = frozenset({"work_items", "deliverables", "constraints", "quality_expectations"})
 
 
 @dataclass(frozen=True)
@@ -58,6 +64,24 @@ class PreliminarySelection:
     """表示 Codex 從候選 Profile 提出的初選 ID；不代表 final selection。"""
 
     skill_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class CoverageAddition:
+    """Coverage Check 提出的單一 additional Skill 公開證據。"""
+
+    id: str
+    supports: tuple[tuple[str, int], ...]
+    distinct_value: str
+
+    def to_mapping(self) -> dict[str, object]:
+        """輸出不含 chain-of-thought 的 bounded addition mapping。"""
+
+        return {
+            "id": self.id,
+            "supports": [{"section": section, "index": index} for section, index in self.supports],
+            "distinct_value": self.distinct_value,
+        }
 
 
 @dataclass(frozen=True)
@@ -139,6 +163,8 @@ class SelectionPreparation:
     candidates: tuple[BasicProfile, ...]
     enriched_profiles: tuple[EnrichedProfile, ...]
     state: SelectionState
+    # 新增欄位置於既有 fields 之後，避免破壞直接建立 preparation 的舊呼叫。
+    unknown_profiles: tuple[BasicProfile, ...] = ()
 
 
 def prepare_selection(
@@ -150,6 +176,7 @@ def prepare_selection(
     known_enriched_profiles: Sequence[EnrichedProfile] = (),
     budget: RetrievalBudget | None = None,
     use_expanded: bool = False,
+    task_analysis_items: Sequence[str] = (),
 ) -> SelectionPreparation:
     """準備新版 contract 的候選資料；不執行 Codex，也不做語意 final selection。"""
 
@@ -161,10 +188,12 @@ def prepare_selection(
         known_enriched_profiles=known_enriched_profiles,
         budget=budget,
         use_expanded=use_expanded,
+        task_analysis_items=task_analysis_items,
     )
     return SelectionPreparation(
         task_summary=task_summary,
         candidates=result.candidates,
+        unknown_profiles=result.unknown_profiles,
         enriched_profiles=result.enriched_profiles,
         state=SelectionState(
             budget=result.budget,
@@ -180,6 +209,7 @@ def expanded_retrieve(
     work_parts: Sequence[str] = (),
     explicit_skill_ids: Sequence[str] = (),
     known_enriched_profiles: Sequence[EnrichedProfile] = (),
+    task_analysis_items: Sequence[str] = (),
 ) -> SelectionPreparation:
     """在既有準備資料上最多擴大一次候選，並沿用同一 route state。"""
 
@@ -192,12 +222,14 @@ def expanded_retrieve(
         known_enriched_profiles=(*preparation.enriched_profiles, *known_enriched_profiles),
         budget=preparation.state.budget,
         use_expanded=True,
+        task_analysis_items=task_analysis_items,
     )
     if result.budget != next_state.budget:
         raise ValueError("expanded retrieval budget state mismatch")
     return replace(
         preparation,
         candidates=result.candidates,
+        unknown_profiles=result.unknown_profiles,
         enriched_profiles=result.enriched_profiles,
         state=next_state,
     )
@@ -272,10 +304,11 @@ def validate_selection(
     inventory: SkillInventory | None = None,
     handoffs: Sequence[FullInstructionHandoff] | None = None,
     state: SelectionState | None = None,
+    task_analysis: TaskAnalysis | None = None,
 ) -> dict[str, object]:
     """驗證最小 selection schema、eligibility、handoff fingerprint 與 route limits。"""
 
-    validated = _validate_selection_schema(payload)
+    validated = _validate_selection_schema(payload, task_analysis=task_analysis)
     if state is not None and state.budget.expanded_retrievals_used > 1:
         raise ValueError("expanded retrieval budget cannot exceed one")
     if state is not None and state.is_finalized:
@@ -324,7 +357,11 @@ def render_selection(payload: Mapping[str, object]) -> str:
     )
 
 
-def _validate_selection_schema(payload: Mapping[str, object]) -> dict[str, object]:
+def _validate_selection_schema(
+    payload: Mapping[str, object],
+    *,
+    task_analysis: TaskAnalysis | None = None,
+) -> dict[str, object]:
     """驗證 selected/no_matching_skill 的互斥結構，不評估 reason 語意品質。"""
 
     if not isinstance(payload, Mapping) or set(payload) != {"task_summary", "selected_skills", "selection_status"}:
@@ -341,7 +378,7 @@ def _validate_selection_schema(payload: Mapping[str, object]) -> dict[str, objec
     normalized: list[dict[str, str]] = []
     seen: set[str] = set()
     for item in selected:
-        if not isinstance(item, Mapping) or set(item) != {"id", "reason"}:
+        if not isinstance(item, Mapping) or set(item) not in ({"id", "reason"}, {"id", "reason", "supports"}):
             raise ValueError("selected skill item has an invalid schema")
         skill_id, reason = item["id"], item["reason"]
         _require_skill_id(skill_id)
@@ -350,7 +387,10 @@ def _validate_selection_schema(payload: Mapping[str, object]) -> dict[str, objec
         if skill_id in seen:
             raise ValueError("selected_skills cannot contain duplicate IDs")
         seen.add(skill_id)
-        normalized.append({"id": skill_id, "reason": reason})
+        normalized_item: dict[str, object] = {"id": skill_id, "reason": reason}
+        if "supports" in item:
+            normalized_item["supports"] = _validate_supports(item["supports"], task_analysis)
+        normalized.append(normalized_item)
     if (status == "selected") != bool(normalized):
         raise ValueError("selection_status and selected_skills are inconsistent")
     return {
@@ -358,6 +398,69 @@ def _validate_selection_schema(payload: Mapping[str, object]) -> dict[str, objec
         "selected_skills": normalized,
         "selection_status": status,
     }
+
+
+def validate_coverage_additions(
+    payload: object,
+    *,
+    candidate_ids: Sequence[str],
+    selected_ids: Sequence[str] = (),
+    task_analysis: TaskAnalysis | None = None,
+) -> tuple[CoverageAddition, ...]:
+    """驗證一次 Coverage Check additions；不判斷 `distinct_value` 語意真假。"""
+
+    if isinstance(payload, Mapping):
+        if set(payload) != {"additions"}:
+            raise ValueError("coverage additions wrapper has an invalid schema")
+        payload = payload["additions"]
+    if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes)):
+        raise ValueError("coverage additions must be a list")
+    allowed = set(candidate_ids)
+    selected = set(selected_ids)
+    result: list[CoverageAddition] = []
+    seen: set[str] = set()
+    for item in payload:
+        if not isinstance(item, Mapping) or set(item) != {"id", "supports", "distinct_value"}:
+            raise ValueError("coverage addition has an invalid schema")
+        skill_id = item["id"]
+        _require_skill_id(skill_id)
+        if skill_id not in allowed:
+            raise ValueError("coverage addition must reference a current candidate")
+        if skill_id in selected or skill_id in seen:
+            raise ValueError("coverage additions must contain unselected unique IDs")
+        supports = _validate_supports(item["supports"], task_analysis)
+        if not supports:
+            raise ValueError("coverage addition requires at least one supports reference")
+        distinct_value = item["distinct_value"]
+        if not isinstance(distinct_value, str) or not distinct_value.strip() or len(distinct_value) > 512:
+            raise ValueError("coverage addition distinct_value must be bounded text")
+        seen.add(skill_id)
+        result.append(CoverageAddition(skill_id, tuple((ref["section"], ref["index"]) for ref in supports), distinct_value.strip()))
+    return tuple(result)
+
+
+def _validate_supports(value: object, task_analysis: TaskAnalysis | None) -> list[dict[str, object]]:
+    """只驗證四類 indexed TaskAnalysis reference，不做 semantic coverage 判斷。"""
+
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise ValueError("supports must be a list")
+    result: list[dict[str, object]] = []
+    seen: set[tuple[str, int]] = set()
+    for reference in value:
+        if not isinstance(reference, Mapping) or set(reference) != {"section", "index"}:
+            raise ValueError("supports reference has an invalid schema")
+        section = reference["section"]
+        index = reference["index"]
+        if section not in _SUPPORT_SECTIONS or isinstance(index, bool) or not isinstance(index, int) or index < 0:
+            raise ValueError("supports reference is invalid")
+        if task_analysis is not None and index >= len(getattr(task_analysis, section)):
+            raise ValueError("supports reference index is out of range")
+        key = (section, index)
+        if key in seen:
+            raise ValueError("supports references must be unique")
+        seen.add(key)
+        result.append({"section": section, "index": index})
+    return result
 
 
 def _handoff_map(handoffs: Sequence[FullInstructionHandoff]) -> dict[str, FullInstructionHandoff]:

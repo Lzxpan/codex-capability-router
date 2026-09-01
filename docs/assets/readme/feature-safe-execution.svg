@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 820" role="img" aria-labelledby="title desc">
+  <title id="title">Safe execution and immutable Receipt comic</title>
+  <desc id="desc">A cat and dog pass a finalized Receipt through a safety shield; a failed execution attempt is recorded without changing the selection.</desc>
+  <rect width="1400" height="820" rx="30" fill="#F7F7FF"/>
+  <g font-family="Segoe UI, Microsoft JhengHei, Arial, sans-serif">
+    <text x="70" y="80" font-size="38" font-weight="800" fill="#172554">Selection first. Safety always.</text>
+    <text x="70" y="116" font-size="23" fill="#5D5D87">the Receipt stays true when an execution attempt fails</text>
+  </g>
+  <g stroke="#172554" stroke-width="7" stroke-linejoin="round">
+    <path d="M88 352l20-76 48 42c28-8 58 0 76 23 25 34 11 84-27 104-44 24-95 5-111-34-8-20-11-38-6-59z" fill="#F5B69A"/>
+    <path d="M103 293l8-29 29 27M139 306l21-27 16 33" fill="#F5B69A"/>
+    <circle cx="137" cy="355" r="7" fill="#172554" stroke="none"/><circle cx="174" cy="355" r="7" fill="#172554" stroke="none"/><path d="M142 382c12 9 24 9 36 0" fill="none" stroke-linecap="round"/>
+    <path d="M107 493c-8 47-2 95 23 118h80c24-21 28-68 18-118" fill="#F5B69A"/>
+    <path d="M1142 352l44-48 37 63c31 10 48 31 50 59 3 45-36 78-81 77-50-1-84-39-74-78 5-20 16-50 24-73z" fill="#E5A977"/>
+    <path d="M1153 310l31-35 17 45M1190 315l30-12-7 41" fill="#E5A977"/>
+    <circle cx="1178" cy="363" r="7" fill="#172554" stroke="none"/><circle cx="1214" cy="363" r="7" fill="#172554" stroke="none"/><path d="M1183 390c12 9 24 9 36 0" fill="none" stroke-linecap="round"/>
+    <path d="M1158 493c-8 48-2 96 24 118h81c23-21 27-69 17-118" fill="#E5A977"/>
+  </g>
+  <g stroke="#172554" stroke-width="6">
+    <rect x="405" y="210" width="290" height="330" rx="25" fill="#FFFFFF"/>
+    <path d="M463 275h174M463 318h124M463 361h156" stroke="#9DADD0" stroke-width="8" stroke-linecap="round"/>
+    <rect x="463" y="414" width="174" height="67" rx="14" fill="#DDF7ED"/><text x="550" y="458" text-anchor="middle" font-size="28" font-weight="800" fill="#116B60" stroke="none" font-family="Segoe UI, Arial, sans-serif">FINALIZED</text>
+    <path d="M491 247l12-22 12 22" fill="#635BFF" stroke="none"/>
+  </g>
+  <text x="550" y="586" text-anchor="middle" font-size="30" font-weight="800" fill="#172554" font-family="Segoe UI, Arial, sans-serif">RECEIPT</text>
+  <text x="550" y="621" text-anchor="middle" font-size="21" fill="#5D5D87" font-family="Segoe UI, Arial, sans-serif">selection + readiness + supports</text>
+  <path d="M720 375h148" stroke="#635BFF" stroke-width="9" stroke-linecap="round"/><path d="M850 355l32 20-32 20" fill="none" stroke="#635BFF" stroke-width="9" stroke-linecap="round"/>
+  <path d="M1000 222l100 40v120c0 87-52 137-100 163-48-26-100-76-100-163V262z" fill="#DDE8FF" stroke="#635BFF" stroke-width="9"/>
+  <path d="M952 363l34 34 67-78" fill="none" stroke="#16A891" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1000" y="599" text-anchor="middle" font-size="30" font-weight="800" fill="#172554" font-family="Segoe UI, Arial, sans-serif">SAFETY GATE</text>
+  <text x="1000" y="635" text-anchor="middle" font-size="21" fill="#5D5D87" font-family="Segoe UI, Arial, sans-serif">permission · authorization · policy</text>
+  <path d="M1245 474l68 72" stroke="#D14E5E" stroke-width="8" stroke-linecap="round"/><path d="M1313 474l-68 72" stroke="#D14E5E" stroke-width="8" stroke-linecap="round"/>
+  <rect x="1120" y="660" width="235" height="72" rx="36" fill="#FDE6E8" stroke="#D14E5E" stroke-width="5"/>
+  <text x="1238" y="706" text-anchor="middle" font-size="23" font-weight="800" fill="#A14068" font-family="Segoe UI, Arial, sans-serif">ATTEMPT: FAILED</text>
+  <text x="700" y="748" text-anchor="middle" font-size="28" font-weight="800" fill="#172554" font-family="Segoe UI, Microsoft JhengHei, Arial, sans-serif">audit the failure · do not rewrite the Receipt</text>
+</svg>

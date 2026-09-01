@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 820" role="img" aria-labelledby="title desc">
+  <title id="title">Coverage-first Skill selection comic</title>
+  <desc id="desc">A user hands a complex task to a cat, who keeps several useful non-redundant Skill cards and rejects duplicates.</desc>
+  <rect width="1400" height="820" rx="30" fill="#FFF9F2"/>
+  <path d="M50 130h1300M50 700h1300" stroke="#F1DCC7" stroke-width="4"/>
+  <g font-family="Segoe UI, Microsoft JhengHei, Arial, sans-serif">
+    <text x="70" y="80" font-size="38" font-weight="800" fill="#172554">Coverage-first</text>
+    <text x="70" y="115" font-size="23" fill="#96613F">material work gets a seat · duplicates stay out</text>
+  </g>
+  <g stroke="#172554" stroke-width="7" stroke-linejoin="round">
+    <rect x="74" y="220" width="290" height="278" rx="26" fill="#E9F0FF"/>
+    <path d="M146 266h144v174H146z" fill="#FFFFFF"/><path d="M173 304h90M173 342h74M173 380h98" fill="none" stroke="#9CB1D4" stroke-width="6" stroke-linecap="round"/>
+    <path d="M210 440l27-27 28 27" fill="none" stroke="#16A891" stroke-width="8"/>
+    <path d="M246 513c-7 41-3 78 18 96h65c20-18 24-55 17-96" fill="#F5B69A"/>
+    <path d="M228 383l8-34 28 29M262 378l22-28 13 34" fill="#F5B69A"/>
+    <circle cx="263" cy="420" r="6" fill="#172554" stroke="none"/><circle cx="297" cy="420" r="6" fill="#172554" stroke="none"/><path d="M269 445c10 8 20 8 30 0" fill="none" stroke-linecap="round"/>
+  </g>
+  <text x="219" y="535" text-anchor="middle" font-size="26" font-weight="800" fill="#172554" font-family="Segoe UI, Arial, sans-serif">USER TASK</text>
+  <text x="219" y="570" text-anchor="middle" font-size="20" fill="#49658F" font-family="Segoe UI, Arial, sans-serif">many deliverables</text>
+  <path d="M390 360h118" stroke="#635BFF" stroke-width="9" stroke-linecap="round"/><path d="M480 340l32 20-32 20" fill="none" stroke="#635BFF" stroke-width="9" stroke-linecap="round"/>
+  <g stroke="#172554" stroke-width="6">
+    <rect x="540" y="190" width="270" height="122" rx="20" fill="#DFF7F0"/><rect x="540" y="348" width="270" height="122" rx="20" fill="#FFE9C7"/><rect x="540" y="506" width="270" height="122" rx="20" fill="#E9E1FF"/>
+    <rect x="860" y="190" width="270" height="122" rx="20" fill="#F6D9E6"/><rect x="860" y="348" width="270" height="122" rx="20" fill="#E7EBF2"/><rect x="860" y="506" width="270" height="122" rx="20" fill="#DCE5F4"/>
+  </g>
+  <g font-family="Segoe UI, Arial, sans-serif" text-anchor="middle">
+    <text x="675" y="238" font-size="27" font-weight="800" fill="#116B60">WRITING</text><text x="675" y="278" font-size="21" fill="#235E59">clear docs</text>
+    <text x="675" y="396" font-size="27" font-weight="800" fill="#9B5A19">VISUALS</text><text x="675" y="436" font-size="21" fill="#7C551D">useful pictures</text>
+    <text x="675" y="554" font-size="27" font-weight="800" fill="#5D4C9E">VERIFY</text><text x="675" y="594" font-size="21" fill="#514A75">fresh evidence</text>
+    <text x="995" y="238" font-size="27" font-weight="800" fill="#A14068">DUPLICATE</text><text x="995" y="278" font-size="21" fill="#7E4760">same job again</text>
+    <text x="995" y="396" font-size="27" font-weight="800" fill="#536174">DUPLICATE</text><text x="995" y="436" font-size="21" fill="#536174">same job again</text>
+    <text x="995" y="554" font-size="27" font-weight="800" fill="#536174">UNRELATED</text><text x="995" y="594" font-size="21" fill="#536174">not needed here</text>
+  </g>
+  <path d="M1148 252l74 0M1148 410l74 0M1148 568l74 0" stroke="#D14E5E" stroke-width="10" stroke-linecap="round"/>
+  <path d="M1212 222l31 30-31 30M1212 380l31 30-31 30M1212 538l31 30-31 30" fill="none" stroke="#D14E5E" stroke-width="10" stroke-linecap="round"/>
+  <rect x="1170" y="653" width="170" height="72" rx="36" fill="#172554"/><text x="1255" y="699" text-anchor="middle" font-size="25" font-weight="800" fill="#FFFFFF" font-family="Segoe UI, Arial, sans-serif">3 useful</text>
+  <text x="700" y="758" text-anchor="middle" font-size="28" font-weight="800" fill="#172554" font-family="Segoe UI, Microsoft JhengHei, Arial, sans-serif">MATERIAL · NON-REDUNDANT</text>
+</svg>

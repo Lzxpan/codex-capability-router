@@ -8,6 +8,7 @@ import json
 import unittest
 
 from codex_capability_router.supporting_context import (
+    ExecutionAttempt,
     ExecutionNeed,
     ReadinessEvidenceCertificate,
     SupportingProviderDeclaration,
@@ -106,6 +107,12 @@ class Phase3SupportingContextTests(unittest.TestCase):
             "selected_count": 0,
             "digest_total_size": 0,
             "detail_expansion_used": False,
+            "present_count": 0,
+            "selectable_count": 0,
+            "verified_ready_count": 0,
+            "present_unverified_count": 0,
+            "metadata_insufficient_count": 0,
+            "explicit_negative_count": 0,
         })
         self.assertEqual(context.provider_digests, ())
         self.assertEqual(context.detail_references, ())
@@ -136,8 +143,8 @@ class Phase3SupportingContextTests(unittest.TestCase):
         self.assertEqual(context.metrics.hard_eligible_count, 1)
         self.assertEqual(context.readiness_evidence, (evidence,))
 
-    def test_node_repl_evidence_mismatch_is_unknown_and_excluded(self) -> None:
-        """node_repl 任一 readiness evidence mismatch 都不得進 digest。"""
+    def test_node_repl_evidence_mismatch_becomes_present_unverified(self) -> None:
+        """node_repl readiness mismatch 不再餓死 presence；只降級為 unverified。"""
 
         original = _provider()
         certificate = _certificate(original)
@@ -156,7 +163,12 @@ class Phase3SupportingContextTests(unittest.TestCase):
                     [_need()], provider_declarations=(declaration,), readiness_evidence=(evidence,)
                 )
                 self.assertEqual(context.metrics.hard_eligible_count, 0)
-                self.assertEqual(context.provider_digests, ())
+                if declaration.callable_exposure:
+                    self.assertEqual(context.metrics.present_unverified_count, 1)
+                    self.assertEqual(context.provider_digests[0].readiness_state, "PRESENT_UNVERIFIED")
+                else:
+                    self.assertEqual(context.metrics.explicit_negative_count, 1)
+                    self.assertEqual(context.provider_digests, ())
 
     def test_functions_exec_command_exact_verified_evidence_is_hard_eligible(self) -> None:
         """builtin Tool 只接受 exact functions.exec_command evidence。"""
@@ -204,8 +216,8 @@ class Phase3SupportingContextTests(unittest.TestCase):
                 )
                 self.assertEqual(context.metrics.hard_eligible_count, 0)
 
-    def test_other_mcp_builtin_app_and_plugin_are_not_auto_accepted(self) -> None:
-        """kind 相同或其他 kind 不會繞過 exact certification。"""
+    def test_present_providers_are_candidates_without_readiness_certificate(self) -> None:
+        """有足夠 public metadata 的 formal Provider 可在 readiness unknown 時進 candidate。"""
 
         declarations = (
             _provider(provider_id="other_mcp", host_identity="mcp__other__js", host_grouping=("mcp__other",)),
@@ -234,7 +246,54 @@ class Phase3SupportingContextTests(unittest.TestCase):
         context = prepare_supporting_context([_need()], provider_declarations=declarations)
         self.assertEqual(context.metrics.discovered_count, 4)
         self.assertEqual(context.metrics.hard_eligible_count, 0)
+        self.assertEqual(context.metrics.present_count, 3)
+        self.assertEqual(context.metrics.selectable_count, 3)
+        self.assertEqual(context.metrics.present_unverified_count, 3)
+        self.assertEqual([item.kind for item in context.provider_digests], ["app", "builtin_tool", "mcp"])
+
+    def test_explicit_negative_provider_is_excluded(self) -> None:
+        """explicitly blocked Provider 不得因 metadata 足夠而進 semantic candidate。"""
+
+        declaration = replace(_provider(), presence_state="EXPLICITLY_BLOCKED", explicit_negative_reason="policy denied")
+        context = prepare_supporting_context([_need()], provider_declarations=(declaration,))
+        self.assertEqual(context.metrics.present_count, 0)
+        self.assertEqual(context.metrics.explicit_negative_count, 1)
         self.assertEqual(context.provider_digests, ())
+
+    def test_insufficient_capability_metadata_is_not_a_candidate(self) -> None:
+        """只有名稱或沒有 tool summary 時，Python 不猜用途。"""
+
+        declaration = replace(_provider(), description=None, display_name=None, callable_tools=())
+        context = prepare_supporting_context([_need()], provider_declarations=(declaration,))
+        self.assertEqual(context.metrics.present_count, 1)
+        self.assertEqual(context.metrics.metadata_insufficient_count, 1)
+        self.assertEqual(context.provider_digests, ())
+
+    def test_execution_attempt_is_bounded_and_provider_level(self) -> None:
+        """Execution audit 只記錄 outcome，不接受 Plugin 或 raw/private data。"""
+
+        attempt = ExecutionAttempt(
+            selection_receipt_fingerprint="a" * 64,
+            execution_need="read-only runtime inspection",
+            provider_kind="mcp",
+            provider_id="node_repl",
+            readiness_state="PRESENT_UNVERIFIED",
+            outcome="AUTH_REQUIRED",
+            error_category="authentication required",
+            actual_server="node_repl",
+            actual_tool="js",
+        )
+        self.assertEqual(attempt.to_mapping()["outcome"], "AUTH_REQUIRED")
+        self.assertEqual(attempt.to_mapping()["provider_kind"], "mcp")
+        with self.assertRaises(ValueError):
+            ExecutionAttempt(
+                selection_receipt_fingerprint="a" * 64,
+                execution_need="read-only runtime inspection",
+                provider_kind="plugin",
+                provider_id="package",
+                readiness_state="PRESENT_UNVERIFIED",
+                outcome="CALL_FAILED",
+            )
 
     def test_digest_is_deterministic_and_metadata_change_changes_fingerprint(self) -> None:
         """相同 Host metadata digest 相同；description/schema 改變會變更 digest。"""

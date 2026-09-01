@@ -28,10 +28,22 @@
 # 原始內容：__version__ = "0.1.0-beta.4"。
 # 修改原因：v0.2.0-beta.1 release preparation 必須與 pyproject 公開版本一致。
 # 修改後功能：公開 v0.2.0-beta.1 版本識別；保留 beta.4 compatibility contract。
+# 修改紀錄（2026-09-01，Steve Peng）
+# 原始內容：package exports 只包含 hard-ready Supporting context 與 readiness evidence。
+# 修改原因：Optimistic Supporting Provider Selection Upgrade 需要公開 typed presence/readiness states 與 execution outcome record。
+# 修改後功能：公開 Provider state constants、PRESENT_UNVERIFIED digest 與獨立 ExecutionAttempt；不新增 Provider endpoint 或第二套路由。
 
 __version__ = "0.2.0-beta.1"
 
 from .registry import classify_capability, deduplicate_registry
+from .host_exposure import (
+    HostExposureError,
+    HostSkillExposureAdapter,
+    HostSkillExposureEnvelope,
+    HostSkillExposureRecord,
+    canonicalize_host_path,
+    revalidate_host_exposure,
+)
 from .route_context import (
     ValidatedDecisionPayloads,
     prepare_route_context,
@@ -39,7 +51,15 @@ from .route_context import (
 )
 from .routing import SelectionRouteInput, route
 from .supporting_context import (
+    FORMAL_SUPPORTING_PROVIDER_KINDS,
+    EXECUTION_OUTCOMES,
+    PROVIDER_METADATA_STATES,
+    PROVIDER_PRESENCE_STATES,
+    PROVIDER_READINESS_STATES,
+    AppReadinessEvidence,
+    ExecutionAttempt,
     ExecutionNeed,
+    McpReadinessEvidence,
     ProviderDigest,
     ProviderDetailReference,
     ReadinessEvidenceCertificate,
@@ -50,6 +70,7 @@ from .supporting_context import (
     SupportingProviderDeclaration,
     SupportingRouteContext,
     SupportingToolDeclaration,
+    SupportingToolSummary,
     UnmetExecutionNeed,
     normalize_execution_needs,
     prepare_supporting_context,
@@ -57,12 +78,29 @@ from .supporting_context import (
     validate_supporting_decision,
     validate_supporting_final_selection_payload,
 )
+from .provider_adapters import (
+    APP_INSTALLED_METHOD,
+    APP_LIST_METHOD,
+    APP_READ_METHOD,
+    MCP_STATUS_DETAIL,
+    MCP_STATUS_LIST_METHOD,
+    ProviderAdapterInventory,
+    adapt_official_app_inventory,
+    adapt_official_mcp_inventory,
+    build_official_provider_requests,
+)
 from .task_analysis import TaskAnalysis, validate_task_analysis
 
 __all__ = [
     "__version__",
     "classify_capability",
     "deduplicate_registry",
+    "HostExposureError",
+    "HostSkillExposureAdapter",
+    "HostSkillExposureEnvelope",
+    "HostSkillExposureRecord",
+    "canonicalize_host_path",
+    "revalidate_host_exposure",
     "SelectionRouteInput",
     "route",
     "TaskAnalysis",
@@ -71,12 +109,21 @@ __all__ = [
     "prepare_route_context",
     "validate_decision_payloads",
     "ExecutionNeed",
+    "ExecutionAttempt",
+    "FORMAL_SUPPORTING_PROVIDER_KINDS",
+    "PROVIDER_PRESENCE_STATES",
+    "PROVIDER_READINESS_STATES",
+    "PROVIDER_METADATA_STATES",
+    "EXECUTION_OUTCOMES",
+    "AppReadinessEvidence",
+    "McpReadinessEvidence",
     "SupportingCapabilitySelection",
     "UnmetExecutionNeed",
     "SupportingFinalSelection",
     "SupportingDetailRequest",
     "SupportingDecisionPayload",
     "SupportingToolDeclaration",
+    "SupportingToolSummary",
     "SupportingProviderDeclaration",
     "ReadinessEvidenceCertificate",
     "ProviderDigest",
@@ -87,4 +134,13 @@ __all__ = [
     "validate_supporting_decision",
     "validate_supporting_final_selection_payload",
     "supporting_selection_status",
+    "APP_LIST_METHOD",
+    "APP_INSTALLED_METHOD",
+    "APP_READ_METHOD",
+    "MCP_STATUS_LIST_METHOD",
+    "MCP_STATUS_DETAIL",
+    "ProviderAdapterInventory",
+    "adapt_official_app_inventory",
+    "adapt_official_mcp_inventory",
+    "build_official_provider_requests",
 ]

@@ -1,5 +1,23 @@
 # Deterministic Routing Policy
 
+## v0.2 Skill selection override
+
+- The production objective applies only to the current recall-first available
+  candidate set: select every Skill with material, non-redundant value for one or
+  more TaskAnalysis items. Do not stop after one sufficient Skill or impose a
+  fixed selected count.
+- Final applicability checks material value, not whether another Skill already
+  appears sufficient. One bounded Coverage Check may inspect only remaining
+  recalled available candidates; every addition repeats canonical ID,
+  availability, handoff, and applicability gates and carries `supports` plus
+  `distinct_value` public evidence.
+- Trusted-root discovery plus full handoff establish Skill availability; Host
+  exposure is optional observation and never a formal Skill gate. Unknown
+  profiles may appear only as possible-relevance diagnostics and never enter
+  handoff or formal coverage completion.
+- The historical primary/optional policy below remains read compatibility for
+  deprecated catalog data; it does not govern the v0.2 `route()` path.
+
 ## 輸出層級
 
 - `selected_primary`：最多 3 筆 `installed` capability。

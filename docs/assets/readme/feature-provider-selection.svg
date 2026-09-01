@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 820" role="img" aria-labelledby="title desc">
+  <title id="title">Provider readiness and optimistic selection comic</title>
+  <desc id="desc">A dog evaluates provider cards: verified and present-unverified cards remain selectable while a known-unavailable card is blocked.</desc>
+  <rect width="1400" height="820" rx="30" fill="#F5FBFA"/>
+  <g font-family="Segoe UI, Microsoft JhengHei, Arial, sans-serif">
+    <text x="70" y="80" font-size="38" font-weight="800" fill="#172554">Provider readiness</text>
+    <text x="70" y="116" font-size="23" fill="#3B716B">presence is evidence to inspect, not a promise to execute</text>
+  </g>
+  <g stroke="#172554" stroke-width="7" stroke-linejoin="round">
+    <path d="M92 300l54-68 50 82c43 9 69 43 68 85-1 54-53 94-110 87-62-8-95-61-77-108 8-21 9-50 15-78z" fill="#E5A977"/>
+    <path d="M112 242l34-39 23 54M156 257l39-17-9 51" fill="#E5A977"/>
+    <circle cx="137" cy="317" r="8" fill="#172554" stroke="none"/><circle cx="183" cy="317" r="8" fill="#172554" stroke="none"/><path d="M143 350c14 10 28 10 42 0" fill="none" stroke-linecap="round"/>
+    <path d="M105 495c-9 50-5 103 25 128h92c28-24 30-77 17-128" fill="#E5A977"/>
+  </g>
+  <text x="190" y="674" text-anchor="middle" font-size="30" font-weight="800" fill="#172554" font-family="Segoe UI, Arial, sans-serif">DOG CHECKS</text>
+  <text x="190" y="711" text-anchor="middle" font-size="22" fill="#3B716B" font-family="Segoe UI, Arial, sans-serif">metadata first</text>
+  <path d="M300 414h108" stroke="#16A891" stroke-width="9" stroke-linecap="round"/><path d="M390 394l32 20-32 20" fill="none" stroke="#16A891" stroke-width="9" stroke-linecap="round"/>
+  <g stroke="#172554" stroke-width="6">
+    <rect x="450" y="178" width="290" height="170" rx="24" fill="#DDF7ED"/><rect x="450" y="378" width="290" height="170" rx="24" fill="#FFF0C9"/><rect x="450" y="578" width="290" height="170" rx="24" fill="#E9EDF3"/>
+  </g>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <circle cx="490" cy="220" r="18" fill="#16A891"/><path d="M481 220l7 7 13-16" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+    <text x="520" y="230" font-size="22" font-weight="800" fill="#116B60">VERIFIED_READY</text><text x="485" y="278" font-size="21" fill="#235E59">strong runtime evidence</text><text x="485" y="315" font-size="21" fill="#235E59">selectable</text>
+    <circle cx="490" cy="420" r="18" fill="#E59A24"/><path d="M490 409v14" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/><circle cx="490" cy="431" r="3" fill="#FFFFFF"/>
+    <text x="520" y="430" font-size="20" font-weight="800" fill="#9B5A19">PRESENT_UNVERIFIED</text><text x="485" y="478" font-size="21" fill="#7C551D">metadata is sufficient</text><text x="485" y="515" font-size="21" fill="#7C551D">still selectable</text>
+    <circle cx="490" cy="620" r="18" fill="#D14E5E"/><path d="M480 610l20 20M500 610l-20 20" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+    <text x="520" y="630" font-size="21" font-weight="800" fill="#A14068">KNOWN_UNAVAILABLE</text><text x="485" y="678" font-size="21" fill="#7E4760">explicit negative</text><text x="485" y="715" font-size="21" fill="#7E4760">blocked before selection</text>
+  </g>
+  <path d="M790 260h128M790 460h128" stroke="#16A891" stroke-width="9" stroke-linecap="round"/><path d="M900 240l32 20-32 20M900 440l32 20-32 20" fill="none" stroke="#16A891" stroke-width="9" stroke-linecap="round"/>
+  <path d="M790 660h128" stroke="#D14E5E" stroke-width="9" stroke-linecap="round"/><path d="M900 640l32 20-32 20" fill="none" stroke="#D14E5E" stroke-width="9" stroke-linecap="round"/>
+  <rect x="980" y="248" width="310" height="286" rx="32" fill="#172554"/>
+  <circle cx="1135" cy="354" r="68" fill="#21D3B1"/><path d="M1105 362c18-36 43-36 61 0M1117 386h36" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-linecap="round"/><circle cx="1135" cy="331" r="8" fill="#FFFFFF"/>
+  <text x="1135" y="474" text-anchor="middle" font-size="29" font-weight="800" fill="#FFFFFF" font-family="Segoe UI, Arial, sans-serif">SELECTABLE</text>
+  <text x="1135" y="510" text-anchor="middle" font-size="21" fill="#BBD4FF" font-family="Segoe UI, Arial, sans-serif">用途適用性由 Codex 判斷</text>
+  <text x="1135" y="712" text-anchor="middle" font-size="27" font-weight="800" fill="#172554" font-family="Segoe UI, Arial, sans-serif">metadata sufficient? → choose</text>
+</svg>

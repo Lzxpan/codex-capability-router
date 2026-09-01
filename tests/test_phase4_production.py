@@ -173,13 +173,12 @@ class Phase4ProductionSelectionTests(unittest.TestCase):
         )
         self.assertEqual(output["selected_skills"][0]["id"], explicit_id)
 
-    def test_unavailable_disabled_unknown_controller_and_support_stay_rejected(self) -> None:
-        """新版 production path 保留 Phase 1～3 的 availability 與 role hard gates。"""
+    def test_unavailable_disabled_controller_and_support_stay_rejected(self) -> None:
+        """trusted-root unknown 不再餓死；unavailable、controller 與 routing-support 仍是 hard gates。"""
 
         cases = (
             ("phase4-unavailable", {"status": "unavailable"}),
             ("phase4-disabled", {"status": "disabled"}),
-            ("phase4-unknown", {"status": "unknown"}),
             ("phase4-controller", {"controller": True}),
             ("phase4-support", {"routing_support": True}),
         )
@@ -187,6 +186,9 @@ class Phase4ProductionSelectionTests(unittest.TestCase):
             _write_skill(self.root, skill_id, **options)
             with self.subTest(skill_id=skill_id), self.assertRaises(ValueError):
                 route(self._request("phase4 task", (skill_id,), self._selected((skill_id,))))
+        _write_skill(self.root, "phase4-unknown", status="unknown")
+        output = route(self._request("phase4 task", ("phase4-unknown",), self._selected(("phase4-unknown",))))
+        self.assertEqual(output["selected_skills"][0]["id"], "phase4-unknown")
 
     def test_new_bilingual_renderer_has_only_new_selection_semantics(self) -> None:
         """雙語 renderer 只輸出 selected_skills/status，不渲染舊 PRIMARY/OPTIONAL。"""

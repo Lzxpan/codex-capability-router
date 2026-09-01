@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1680" role="img" aria-labelledby="title desc">
+  <title id="title">Codex Capability Router workflow</title>
+  <desc id="desc">A vertical flow from User Task through TaskAnalysis, Skill selection, Coverage Check, Execution Needs, Provider selection, route, FINALIZED Receipt, and execution audit, with a readiness branch.</desc>
+  <defs>
+    <filter id="flowShadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#172554" flood-opacity=".12"/></filter>
+  </defs>
+  <rect width="1400" height="1680" rx="30" fill="#FBFCFF"/>
+  <g font-family="Segoe UI, Microsoft JhengHei, Arial, sans-serif">
+    <text x="70" y="76" font-size="39" font-weight="800" fill="#172554">Router workflow</text>
+    <text x="70" y="114" font-size="23" fill="#526A93">selection is auditable; execution remains bounded by the Host</text>
+  </g>
+  <g fill="#FFFFFF" stroke="#6277A7" stroke-width="5" filter="url(#flowShadow)">
+    <rect x="430" y="150" width="540" height="88" rx="22"/><rect x="430" y="286" width="540" height="88" rx="22"/>
+    <rect x="430" y="422" width="540" height="88" rx="22"/><rect x="430" y="558" width="540" height="88" rx="22"/>
+    <rect x="430" y="694" width="540" height="88" rx="22"/><rect x="430" y="830" width="540" height="88" rx="22"/>
+    <rect x="430" y="966" width="540" height="88" rx="22"/><rect x="430" y="1102" width="540" height="88" rx="22"/>
+    <rect x="430" y="1238" width="540" height="88" rx="22"/><rect x="430" y="1374" width="540" height="88" rx="22"/>
+  </g>
+  <g font-family="Segoe UI, Arial, sans-serif" text-anchor="middle" fill="#172554">
+    <text x="700" y="206" font-size="31" font-weight="800">User Task</text>
+    <text x="700" y="342" font-size="31" font-weight="800">TaskAnalysis</text>
+    <text x="700" y="478" font-size="31" font-weight="800">Skill Recall</text>
+    <text x="700" y="614" font-size="31" font-weight="800">Coverage-first Skill Selection</text>
+    <text x="700" y="750" font-size="31" font-weight="800">Coverage Check</text>
+    <text x="700" y="886" font-size="31" font-weight="800">Execution Needs</text>
+    <text x="700" y="1022" font-size="31" font-weight="800">Supporting Provider Candidates</text>
+    <text x="700" y="1158" font-size="31" font-weight="800">LLM Provider Selection</text>
+    <text x="700" y="1294" font-size="31" font-weight="800">route()</text>
+    <text x="700" y="1430" font-size="31" font-weight="800">FINALIZED Receipt</text>
+  </g>
+  <g stroke="#635BFF" stroke-width="8" stroke-linecap="round" fill="none">
+    <path d="M700 238v48M700 374v48M700 510v48M700 646v48M700 782v48M700 918v48M700 1054v48M700 1190v48M700 1326v48"/>
+    <path d="M680 268l20 24 20-24M680 404l20 24 20-24M680 540l20 24 20-24M680 676l20 24 20-24M680 812l20 24 20-24M680 948l20 24 20-24M680 1084l20 24 20-24M680 1220l20 24 20-24M680 1356l20 24 20-24"/>
+  </g>
+  <g stroke="#16A891" stroke-width="6" fill="none" stroke-linecap="round">
+    <path d="M970 874h206v-542h-206"/><path d="M1176 332l-25-20M1176 332l-25 20"/>
+  </g>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <rect x="1050" y="184" width="270" height="94" rx="20" fill="#EAF8F5" stroke="#16A891" stroke-width="5"/>
+    <text x="1185" y="220" text-anchor="middle" font-size="22" font-weight="800" fill="#116B60">Provider presence</text>
+    <text x="1185" y="251" text-anchor="middle" font-size="19" fill="#235E59">instance exists?</text>
+    <rect x="1050" y="304" width="270" height="94" rx="20" fill="#EAF8F5" stroke="#16A891" stroke-width="5"/>
+    <text x="1185" y="340" text-anchor="middle" font-size="22" font-weight="800" fill="#116B60">metadata sufficient?</text>
+    <text x="1185" y="371" text-anchor="middle" font-size="19" fill="#235E59">capability data</text>
+    <rect x="1050" y="424" width="270" height="94" rx="20" fill="#EAF8F5" stroke="#16A891" stroke-width="5"/>
+    <text x="1185" y="460" text-anchor="middle" font-size="22" font-weight="800" fill="#116B60">explicit negative?</text>
+    <text x="1185" y="491" text-anchor="middle" font-size="19" fill="#235E59">block if yes</text>
+    <rect x="1040" y="566" width="290" height="102" rx="20" fill="#DDF7ED" stroke="#16A891" stroke-width="5"/>
+    <text x="1185" y="604" text-anchor="middle" font-size="21" font-weight="800" fill="#116B60">VERIFIED_READY</text>
+    <text x="1185" y="635" text-anchor="middle" font-size="19" fill="#235E59">or PRESENT_UNVERIFIED</text>
+    <rect x="1040" y="698" width="290" height="82" rx="20" fill="#172554"/>
+    <text x="1185" y="749" text-anchor="middle" font-size="24" font-weight="800" fill="#FFFFFF">selectable</text>
+    <path d="M1185 518v47M1185 668v28" stroke="#16A891" stroke-width="6" stroke-linecap="round"/>
+    <path d="M1170 550l15 15 15-15M1170 682l15 15 15-15" fill="none" stroke="#16A891" stroke-width="6" stroke-linecap="round"/>
+    <rect x="1035" y="804" width="300" height="78" rx="20" fill="#FDE6E8" stroke="#D14E5E" stroke-width="5"/>
+    <text x="1185" y="852" text-anchor="middle" font-size="21" font-weight="800" fill="#A14068">KNOWN_UNAVAILABLE → excluded</text>
+  </g>
+  <g>
+    <path d="M700 1462v62" stroke="#635BFF" stroke-width="8" stroke-linecap="round"/><path d="M680 1514l20 24 20-24" fill="none" stroke="#635BFF" stroke-width="8" stroke-linecap="round"/>
+    <rect x="430" y="1532" width="540" height="88" rx="22" fill="#FFF0C9" stroke="#E59A24" stroke-width="5" filter="url(#flowShadow)"/>
+    <text x="700" y="1588" text-anchor="middle" font-size="30" font-weight="800" fill="#9B5A19" font-family="Segoe UI, Arial, sans-serif">Execution Attempt / Audit</text>
+  </g>
+  <text x="70" y="1620" font-size="20" fill="#526A93" font-family="Segoe UI, Microsoft JhengHei, Arial, sans-serif">App · MCP · builtin_tool are formal Provider kinds. Plugin is package and provenance only.</text>
+</svg>

@@ -273,7 +273,10 @@ class Phase2ProfileRetrievalTests(unittest.TestCase):
             )
             candidate_ids = {item.id for item in result.candidates}
 
-            self.assertEqual(candidate_ids, {"synthetic-explicit-available"})
+            self.assertEqual(
+                candidate_ids,
+                {"synthetic-explicit-available", "synthetic-explicit-unknown"},
+            )
 
     def test_expanded_retrieval_can_run_once_and_rejects_third_round(self) -> None:
         """expanded retrieval budget 僅能從 0 消耗到 1，第三輪必須拒絕。"""

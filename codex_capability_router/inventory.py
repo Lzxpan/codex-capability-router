@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 import hashlib
 import json
@@ -11,6 +11,10 @@ import re
 import unicodedata
 
 from .discovery import _canonical_skill_id, _frontmatter, discover_skill_roots
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .host_exposure import HostSkillExposureEnvelope
 from .models import (
     CapabilityKind,
     CapabilityRecord,
@@ -21,11 +25,17 @@ from .models import (
 from .registry import merge_capability_records
 from .routing import _is_controller
 
+# 修改紀錄（2026-08-31，Steve Peng）
+# 原始內容：inventory 以 Host exposure evidence 作為 Skill availability gate，缺少 Host evidence 的 trusted-root Skill 會被降為 unknown。
+# 修改原因：Skill availability 與 Provider availability 分離；trusted root 的合法 discovery/handoff safety 才是 Skill formal availability 基礎。
+# 修改後功能：trusted-root valid record 直接進入 formal availability，Host exposure 僅保存 optional observation；仍保留 bounded diagnostics、reference-only metrics 與 Python non-semantic boundary。
+
 
 # ponytail: cache 只保留記憶體中的 Basic Profile；若未來需要跨程序持久化，先補 privacy/eviction 規格再加入 storage。
 PROFILE_FORMAT_VERSION = "phase1-basic-profile-v1"
 _AVAILABLE_STATUSES = frozenset({CapabilityStatus.INSTALLED, CapabilityStatus.AVAILABLE})
 _CANONICAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+DEFAULT_POSSIBLE_RELEVANCE_SERIALIZED_BUDGET_BYTES = 32768
 
 
 @dataclass(frozen=True)
@@ -51,6 +61,44 @@ class EnrichedProfile:
     summary: str
     limitations: tuple[str, ...]
     requirements: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PossibleRelevanceDiagnostic:
+    """retrieval-recalled unknown profile 的公開、非正式相關性診斷。"""
+
+    id: str
+    availability_state: str
+    possible_relevance_reason: str
+    exclusion_reason: str
+
+    def __post_init__(self) -> None:
+        """限制 diagnostic 只能描述 unknown profile 的 bounded public evidence。"""
+
+        if not isinstance(self.id, str) or _CANONICAL_ID.fullmatch(self.id) is None:
+            raise ValueError("possible relevance diagnostic requires a canonical Skill ID")
+        if self.availability_state != CapabilityStatus.UNKNOWN.value:
+            raise ValueError("possible relevance diagnostic must remain unknown")
+        for value, field_name in (
+            (self.possible_relevance_reason, "possible_relevance_reason"),
+            (self.exclusion_reason, "exclusion_reason"),
+        ):
+            if not isinstance(value, str) or not value.strip() or len(value) > 512:
+                raise ValueError(f"{field_name} must be bounded text")
+            if "/" in value or "\\" in value or any(
+                marker in value.casefold() for marker in ("api_key=", "password=", "secret=", "token=")
+            ):
+                raise ValueError(f"{field_name} contains private or sensitive text")
+
+    def to_mapping(self) -> dict[str, str]:
+        """輸出不含 full instructions/path 的 bounded diagnostic。"""
+
+        return {
+            "id": self.id,
+            "availability_state": self.availability_state,
+            "possible_relevance_reason": self.possible_relevance_reason,
+            "exclusion_reason": self.exclusion_reason,
+        }
 
 
 @dataclass(frozen=True)
@@ -80,6 +128,8 @@ class RetrievalResult:
     candidates: tuple[BasicProfile, ...] = ()
     enriched_profiles: tuple[EnrichedProfile, ...] = ()
     budget: RetrievalBudget = field(default_factory=RetrievalBudget)
+    # 新增欄位置於既有 positional fields 之後，保留 beta.4 compatibility。
+    unknown_profiles: tuple[BasicProfile, ...] = ()
 
 
 @dataclass
@@ -110,6 +160,10 @@ class SkillInventory:
     diagnostics: tuple[DiscoveryDiagnostic, ...] = ()
     partial: bool = False
     _skill_paths: dict[str, Path] = field(default_factory=dict, repr=False, compare=False)
+    host_exposed_skill_ids: tuple[str, ...] = ()
+    router_available_skill_ids: tuple[str, ...] = ()
+    # 新增欄位置於既有欄位之後，保留既有 positional compatibility。
+    trusted_root_skill_ids: tuple[str, ...] = ()
 
 
 def refresh_skill_inventory(
@@ -119,6 +173,7 @@ def refresh_skill_inventory(
     runtime: DiscoveryResult | None = None,
     cli: DiscoveryResult | None = None,
     manual: DiscoveryResult | None = None,
+    host_exposure: HostSkillExposureEnvelope | None = None,
 ) -> SkillInventory:
     """重新 discovery/merge 明確 roots，並以本次來源更新 Skill Profile cache。
 
@@ -142,6 +197,25 @@ def refresh_skill_inventory(
     for local_record in root_result.records:
         local_records.setdefault(local_record.id, local_record)
     skill_contents, skill_paths = _read_allowlisted_skill_contents(roots)
+    host_exposed_ids: tuple[str, ...] = ()
+    if host_exposure is not None:
+        from .host_exposure import HostSkillExposureEnvelope
+
+        if not isinstance(host_exposure, HostSkillExposureEnvelope):
+            raise TypeError("host_exposure must be a trusted HostSkillExposureEnvelope")
+        # Host exposure 只記錄 observed IDs；不改寫 trusted-root formal availability。
+        host_exposed_ids = host_exposure.exposed_ids
+    # 只有 discovery 與同一 refresh 內可讀的 handoff target 都存在，才算本次
+    # trusted-root formal availability；避免檔案在 discovery/read 之間消失時
+    # 先被誤報為 available，並把真正的 handoff safety 留給 selection validator。
+    trusted_root_ids = frozenset(local_records)
+    handoff_ready_ids = trusted_root_ids.intersection(skill_paths)
+    records = tuple(
+        replace(record, status=CapabilityStatus.AVAILABLE)
+        if record.id in trusted_root_ids and record.status == CapabilityStatus.UNKNOWN
+        else record
+        for record in records
+    )
     profiles = tuple(
         _refresh_profile(active_cache, record, skill_contents, local_records.get(record.id))
         for record in records
@@ -155,7 +229,8 @@ def refresh_skill_inventory(
     available_records = tuple(
         record
         for record in records
-        if record.status in _AVAILABLE_STATUSES
+        if record.id in handoff_ready_ids
+        and record.status in _AVAILABLE_STATUSES
         and not _is_controller(record)
         and not record.routing_support
     )
@@ -171,6 +246,9 @@ def refresh_skill_inventory(
         diagnostics=diagnostics,
         partial=any(result.partial for result in source_results),
         _skill_paths=skill_paths,
+        trusted_root_skill_ids=tuple(sorted(trusted_root_ids, key=lambda value: (value.casefold(), value))),
+        host_exposed_skill_ids=host_exposed_ids,
+        router_available_skill_ids=tuple(record.id for record in available_records),
     )
 
 
@@ -214,6 +292,7 @@ def retrieve_candidates(
     known_enriched_profiles: Sequence[EnrichedProfile] = (),
     budget: RetrievalBudget | None = None,
     use_expanded: bool = False,
+    task_analysis_items: Sequence[str] = (),
 ) -> RetrievalResult:
     """以 Basic/既有 Enriched 文字召回候選，不執行 final Skill Selection。
 
@@ -225,6 +304,8 @@ def retrieve_candidates(
     _require_bounded_text(task_summary, "task_summary")
     for part in work_parts:
         _require_bounded_text(part, "work_part")
+    for item in task_analysis_items:
+        _require_bounded_text(item, "task_analysis_item")
     for capability_id in explicit_skill_ids:
         _require_explicit_id(capability_id)
 
@@ -233,29 +314,44 @@ def retrieve_candidates(
         current_budget = current_budget.consume_expanded()
     available_ids = {record.id for record in inventory.available_records}
     profiles = tuple(profile for profile in inventory.profiles if profile.id in available_ids)
+    # 只有目前未進入 formal available inventory 的 recalled profile 才能進 diagnostic；
+    # trusted-root valid Skill 已在 refresh 時升格為 available，不會因 Host 缺失而誤入這裡。
+    unknown_profiles = tuple(
+        profile for profile in inventory.profiles if profile.status == CapabilityStatus.UNKNOWN
+    )
     profiles_by_id = {profile.id.casefold(): profile for profile in profiles}
-    records_by_id = {record.id: record for record in inventory.available_records}
+    all_profiles_by_id = {profile.id.casefold(): profile for profile in inventory.profiles}
+    records_by_id = {record.id: record for record in inventory.records}
     known_by_id = {profile.id: profile for profile in known_enriched_profiles}
 
+    search_inputs = _deduplicate_search_inputs((task_summary, *work_parts, *task_analysis_items))
     if len(inventory.profiles) <= _SMALL_INVENTORY_LIMIT:
         matched_ids = {profile.id for profile in profiles}
+        matched_unknown_ids = {profile.id for profile in unknown_profiles}
     else:
         threshold = 1 if use_expanded else 2
         matched_ids: set[str] = set()
-        for work in (task_summary, *work_parts):
+        matched_unknown_ids: set[str] = set()
+        for work in search_inputs:
             terms = _search_terms(work)
             if not terms:
                 continue
-            for profile in profiles:
+            for profile in inventory.profiles:
                 enriched = known_by_id.get(profile.id)
                 search_text = _profile_search_text(profile, records_by_id.get(profile.id), enriched)
                 if _term_overlap(terms, search_text) >= threshold:
-                    matched_ids.add(profile.id)
+                    if profile.id in available_ids:
+                        matched_ids.add(profile.id)
+                    else:
+                        matched_unknown_ids.add(profile.id)
 
     for requested_id in explicit_skill_ids:
         profile = profiles_by_id.get(requested_id.casefold())
         if profile is not None:
             matched_ids.add(profile.id)
+        unknown_profile = all_profiles_by_id.get(requested_id.casefold())
+        if unknown_profile is not None:
+            matched_unknown_ids.add(unknown_profile.id)
 
     candidates = tuple(profile for profile in profiles if profile.id in matched_ids)
     description_counts: dict[str, int] = {}
@@ -286,9 +382,87 @@ def retrieve_candidates(
 
     return RetrievalResult(
         candidates=candidates,
+        unknown_profiles=tuple(profile for profile in unknown_profiles if profile.id in matched_unknown_ids),
         enriched_profiles=tuple(enriched_profiles),
         budget=current_budget,
     )
+
+
+def _deduplicate_search_inputs(values: Sequence[str]) -> tuple[str, ...]:
+    """依既有 NFKC/casefold 規則去除 retrieval input 的 exact duplicates。"""
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        key = _normalize_search_text(value)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(value)
+    return tuple(result)
+
+
+def serialize_recalled_unknown_profiles(profiles: Sequence[BasicProfile]) -> bytes:
+    """以固定 canonical JSON/UTF-8 bytes 序列化 unknown profile metadata。"""
+
+    payload = [
+        {
+            "id": profile.id,
+            "name": profile.name,
+            "description": profile.description,
+            "version": profile.version,
+            "status": profile.status.value,
+            "source": profile.source,
+            "provenance": list(profile.provenance),
+            "fingerprint": profile.fingerprint,
+            "stale": profile.stale,
+        }
+        for profile in sorted(profiles, key=lambda item: (item.id.casefold(), item.id))
+    ]
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def build_possible_relevance_diagnostics(
+    profiles: Sequence[BasicProfile],
+    reasons: Mapping[str, str],
+    *,
+    budget_bytes: int | None = None,
+) -> tuple[tuple[PossibleRelevanceDiagnostic, ...], str]:
+    """建立 recalled-unknown diagnostics；超過固定 bytes budget 時整批略過。"""
+
+    configured_budget = (
+        DEFAULT_POSSIBLE_RELEVANCE_SERIALIZED_BUDGET_BYTES
+        if budget_bytes is None
+        else budget_bytes
+    )
+    if isinstance(configured_budget, bool) or not isinstance(configured_budget, int) or configured_budget < 0:
+        raise ValueError("possible relevance budget must be a non-negative integer")
+    if not isinstance(reasons, Mapping):
+        raise ValueError("possible relevance reasons must be a mapping")
+    for skill_id in reasons:
+        if not isinstance(skill_id, str) or _CANONICAL_ID.fullmatch(skill_id) is None:
+            raise ValueError("possible relevance reason key must be a canonical Skill ID")
+    if any(profile.status != CapabilityStatus.UNKNOWN for profile in profiles):
+        raise ValueError("possible relevance diagnostics require unknown profiles")
+    if len(serialize_recalled_unknown_profiles(profiles)) > configured_budget:
+        return (), "skipped_context_budget"
+    profile_ids = {profile.id for profile in profiles}
+    diagnostics: list[PossibleRelevanceDiagnostic] = []
+    for skill_id in sorted(profile_ids & set(reasons), key=lambda value: (value.casefold(), value)):
+        reason = reasons[skill_id]
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 512:
+            raise ValueError("possible relevance reason must be bounded text")
+        if any(marker in reason.casefold() for marker in ("api_key=", "password=", "secret=", "token=")):
+            raise ValueError("possible relevance reason contains sensitive text")
+        diagnostics.append(
+            PossibleRelevanceDiagnostic(
+                id=skill_id,
+                availability_state="unknown",
+                possible_relevance_reason=reason.strip(),
+                exclusion_reason="trusted-root availability and handoff evidence is insufficient; formal selection is blocked",
+            )
+        )
+    return tuple(diagnostics), "produced"
 
 
 _SMALL_INVENTORY_LIMIT = 32
@@ -481,7 +655,7 @@ def _fingerprint_fields(
 def _read_allowlisted_skill_contents(
     roots: Sequence[Path],
 ) -> tuple[dict[tuple[str, str], bytes], dict[str, Path]]:
-    """只讀取 caller 明確 roots 的直接 Skill entries，回傳 fingerprint 用 bytes。"""
+    """只讀取 caller 明確 roots 的直接 Skill entries，回傳 bytes 與 deterministic path。"""
 
     result: dict[tuple[str, str], bytes] = {}
     paths: dict[str, Path] = {}

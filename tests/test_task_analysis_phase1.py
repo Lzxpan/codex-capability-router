@@ -100,10 +100,15 @@ class LegacyFrontmatterCorrectnessTests(unittest.TestCase):
         self.assertNotIn("source_frontmatter", result.to_registry_json())
 
     def test_explain_code_profile_and_runtime_handoff(self) -> None:
-        """只有正式 runtime available 才可建立 available profile 並 handoff。"""
+        """trusted-root 合法 Skill 可直接建立 available profile 並 handoff。"""
 
-        unknown_inventory = refresh_skill_inventory([EXPLAIN_CODE_FIXTURE])
-        self.assertEqual(unknown_inventory.available_records, ())
+        trusted_inventory = refresh_skill_inventory([EXPLAIN_CODE_FIXTURE])
+        self.assertEqual([record.id for record in trusted_inventory.available_records], ["explain-code"])
+        trusted_handoffs = handoff_full_instructions(
+            trusted_inventory,
+            PreliminarySelection(("explain-code",)),
+        )
+        self.assertEqual([handoff.id for handoff in trusted_handoffs], ["explain-code"])
 
         runtime = import_runtime_envelope(
             {

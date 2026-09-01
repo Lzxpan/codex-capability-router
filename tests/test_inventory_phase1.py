@@ -208,8 +208,8 @@ class Phase1InventoryTests(unittest.TestCase):
             self.assertIn("manual:fixture", profile.provenance)
             self.assertEqual([record.id for record in result.available_records], ["shared-skill"])
 
-    def test_ineligible_roles_and_unknown_are_not_available(self) -> None:
-        """controller、routing-support、unknown 與 disabled 不得進入可用 inventory。"""
+    def test_ineligible_roles_are_not_available_but_trusted_root_unknown_is_promoted(self) -> None:
+        """trusted-root valid Skill 不因 unknown metadata 被餓死，角色 hard gate 仍生效。"""
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -227,7 +227,7 @@ class Phase1InventoryTests(unittest.TestCase):
 
             result = refresh_skill_inventory([root], cache=ProfileCache(), runtime=runtime)
 
-            self.assertEqual(result.available_records, ())
+            self.assertEqual([record.id for record in result.available_records], ["normal-skill"])
 
     def test_disabled_status_remains_excluded_from_current_inventory(self) -> None:
         """新增 disabled 狀態不得進入新版 production candidate preparation。"""

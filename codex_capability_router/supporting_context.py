@@ -4,6 +4,10 @@
 # 原始內容：Phase 3 只準備 hard-eligible Provider digest/detail references，尚無 final decision protocol。
 # 修改原因：Phase 4 需要 bounded request_detail/final_selection、status gate 與 exact Provider validation。
 # 修改後功能：新增 immutable Supporting decision contracts；只驗證 schema、canonical identity、readiness 與原始 need 來源，不做 semantic selection 或 endpoint invocation。
+# 修改紀錄（2026-09-01，Steve Peng）
+# 原始內容：只有 hard-eligible readiness certificate 才能建立 Provider digest，unknown readiness 會被排除。
+# 修改原因：Optimistic Supporting Provider Selection Upgrade 要分離 instance presence、capability metadata 與 runtime readiness。
+# 修改後功能：PRESENT_UNVERIFIED Provider 可進 semantic candidate；explicit negative 與 metadata insufficient 仍在 semantic selection 前排除，並新增最小 execution outcome record。
 
 from __future__ import annotations
 
@@ -16,11 +20,29 @@ from pathlib import PurePosixPath, PureWindowsPath
 import re
 
 
-SUPPORTING_CONTEXT_CONTRACT_VERSION = "v0.2-supporting-context-v1"
+SUPPORTING_CONTEXT_CONTRACT_VERSION = "v0.2-supporting-context-v2"
 READINESS_EVIDENCE_CONTRACT_VERSION = "v0.2-phase0-runtime-readiness-v1"
 _FINGERPRINT = re.compile(r"^[0-9a-f]{64}$")
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
-_PROVIDER_KINDS = frozenset({"mcp", "builtin_tool", "app", "plugin"})
+FORMAL_SUPPORTING_PROVIDER_KINDS = frozenset({"app", "mcp", "builtin_tool"})
+PROVIDER_PRESENCE_STATES = frozenset({"PRESENT", "ABSENT", "EXPLICITLY_BLOCKED"})
+PROVIDER_READINESS_STATES = frozenset({"VERIFIED_READY", "PRESENT_UNVERIFIED", "KNOWN_UNAVAILABLE"})
+PROVIDER_METADATA_STATES = frozenset({"SUFFICIENT", "INSUFFICIENT_CAPABILITY_METADATA"})
+EXECUTION_OUTCOMES = frozenset(
+    {
+        "SUCCESS",
+        "AUTH_REQUIRED",
+        "UNAVAILABLE",
+        "CONNECTION_FAILED",
+        "POLICY_BLOCKED",
+        "CALL_FAILED",
+        "NOT_ATTEMPTED",
+    }
+)
+# plugin remains parseable for historical records, but is never a new formal
+# selected Provider.  Keeping this compatibility set here avoids rewriting
+# old receipts while the production validator uses the formal set below.
+_PROVIDER_KINDS = FORMAL_SUPPORTING_PROVIDER_KINDS | {"plugin"}
 # Phase 0 evidence certification scope；這是 exact readiness instance scope，非 task/category mapping。
 _CERTIFIED_PROVIDER_SCOPE = frozenset(
     {("mcp", "node_repl"), ("builtin_tool", "functions.exec_command")}
@@ -48,8 +70,72 @@ class ExecutionNeed:
         return {"need": self.need, "reason": self.reason}
 
 
+@dataclass(frozen=True)
+class ExecutionAttempt:
+    """獨立的 bounded Provider execution outcome；不會改寫 Selection Receipt。"""
+
+    selection_receipt_fingerprint: str
+    execution_need: str
+    provider_kind: str
+    provider_id: str
+    readiness_state: str
+    outcome: str
+    error_category: str | None = None
+    actual_server: str | None = None
+    actual_tool: str | None = None
+    app_context: str | None = None
+    plugin_id: str | None = None
+
+    def __post_init__(self) -> None:
+        """驗證 execution audit 的 bounded identity、state 與 public metadata。"""
+
+        if _FINGERPRINT.fullmatch(self.selection_receipt_fingerprint) is None:
+            raise ValueError("selection_receipt_fingerprint must be a SHA-256 fingerprint")
+        object.__setattr__(self, "execution_need", _safe_text(self.execution_need, "execution need", 256))
+        if self.provider_kind not in FORMAL_SUPPORTING_PROVIDER_KINDS:
+            raise ValueError("execution attempts require a formal provider kind")
+        object.__setattr__(self, "provider_id", _identifier(self.provider_id, "execution provider id"))
+        if self.readiness_state not in PROVIDER_READINESS_STATES:
+            raise ValueError("execution attempt has an unsupported readiness state")
+        if self.outcome not in EXECUTION_OUTCOMES:
+            raise ValueError("execution attempt has an unsupported outcome")
+        for field_name in ("error_category", "actual_server", "app_context"):
+            value = getattr(self, field_name)
+            if value is not None:
+                object.__setattr__(self, field_name, _safe_text(value, field_name, 512))
+        if self.actual_tool is not None:
+            object.__setattr__(self, "actual_tool", _identifier(self.actual_tool, "actual tool"))
+        if self.plugin_id is not None:
+            object.__setattr__(self, "plugin_id", _identifier(self.plugin_id, "plugin provenance id"))
+
+    def to_mapping(self) -> dict[str, object]:
+        """輸出不含 secret、raw arguments 或 private path 的 execution audit。"""
+
+        result: dict[str, object] = {
+            "selection_receipt_fingerprint": self.selection_receipt_fingerprint,
+            "execution_need": self.execution_need,
+            "provider_kind": self.provider_kind,
+            "provider_id": self.provider_id,
+            "readiness_state": self.readiness_state,
+            "outcome": self.outcome,
+            "error_category": self.error_category,
+        }
+        for field_name in ("actual_server", "actual_tool", "app_context", "plugin_id"):
+            value = getattr(self, field_name)
+            if value is not None:
+                result[field_name] = value
+        return result
+
+
 SUPPORTING_SELECTION_STATUSES = frozenset(
-    {"not_required", "selected", "no_matching_supporting_capability"}
+    {
+        "not_required",
+        "selected",
+        "no_matching_supporting_capability",
+        "no_present_supporting_provider",
+        "insufficient_capability_metadata",
+        "explicit_negative_exclusion",
+    }
 )
 
 
@@ -64,7 +150,7 @@ class SupportingCapabilitySelection:
     def __post_init__(self) -> None:
         """只驗證 schema 與 bounded public text，不判斷語意適用性。"""
 
-        if self.kind not in {"mcp", "builtin_tool", "app", "plugin"}:
+        if self.kind not in _PROVIDER_KINDS:
             raise ValueError("unsupported selected supporting capability kind")
         object.__setattr__(self, "canonical_provider_id", _identifier(self.canonical_provider_id, "canonical provider id"))
         object.__setattr__(self, "purpose", _safe_text(self.purpose, "supporting purpose", 512))
@@ -132,7 +218,7 @@ class SupportingFinalSelection:
 
 @dataclass(frozen=True)
 class SupportingDetailRequest:
-    """一輪 bounded request_detail；只引用 exact hard-eligible provider/tool IDs。"""
+    """一輪 bounded request_detail；只引用 exact selectable provider/tool IDs。"""
 
     requests: tuple[tuple[str, tuple[str, ...]], ...]
 
@@ -270,6 +356,67 @@ class SupportingToolDeclaration:
 
 
 @dataclass(frozen=True)
+class SupportingToolSummary:
+    """Official App/MCP public tool summary without an invented JSON schema."""
+
+    id: str
+    title: str | None
+    description: str
+    is_enabled: bool
+    disabled_reason: str | None
+    is_read_only: bool | None
+    provenance: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Validate only fields exposed by the Host protocol."""
+
+        object.__setattr__(self, "id", _identifier(self.id, "tool id"))
+        if self.title is not None:
+            object.__setattr__(self, "title", _safe_text(self.title, "tool title", 512))
+        object.__setattr__(self, "description", _safe_text(self.description, "tool description", 1024))
+        if not isinstance(self.is_enabled, bool):
+            raise ValueError("tool is_enabled must be boolean")
+        if self.disabled_reason is not None:
+            object.__setattr__(self, "disabled_reason", _safe_text(self.disabled_reason, "disabled reason", 512))
+        if self.is_read_only is not None and not isinstance(self.is_read_only, bool):
+            raise ValueError("tool is_read_only must be boolean or null")
+        object.__setattr__(self, "provenance", _provenance(self.provenance))
+
+    @classmethod
+    def from_mapping(cls, payload: Mapping[str, object]) -> "SupportingToolSummary":
+        """Parse the normalized summary projection used by route inputs."""
+
+        allowed = {"id", "title", "description", "is_enabled", "disabled_reason", "is_read_only", "provenance"}
+        if set(payload) - allowed:
+            raise ValueError("supporting tool summary has unsupported fields")
+        return cls(
+            id=payload.get("id"),  # type: ignore[arg-type]
+            title=payload.get("title"),  # type: ignore[arg-type]
+            description=payload.get("description"),  # type: ignore[arg-type]
+            is_enabled=payload.get("is_enabled"),  # type: ignore[arg-type]
+            disabled_reason=payload.get("disabled_reason"),  # type: ignore[arg-type]
+            is_read_only=payload.get("is_read_only"),  # type: ignore[arg-type]
+            provenance=payload.get("provenance", ()),  # type: ignore[arg-type]
+        )
+
+    def to_mapping(self) -> dict[str, object]:
+        """Return the bounded official summary; no schema is fabricated."""
+
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "is_enabled": self.is_enabled,
+            "disabled_reason": self.disabled_reason,
+            "is_read_only": self.is_read_only,
+            "provenance": list(self.provenance),
+        }
+
+
+SupportingTool = SupportingToolDeclaration | SupportingToolSummary
+
+
+@dataclass(frozen=True)
 class SupportingProviderDeclaration:
     """Host runtime 暴露的單一 Provider declaration；不執行任何 endpoint。"""
 
@@ -277,10 +424,13 @@ class SupportingProviderDeclaration:
     kind: str
     host_identity: str
     host_grouping: tuple[str, ...]
-    description: str
-    callable_tools: tuple[SupportingToolDeclaration, ...]
+    description: str | None
+    callable_tools: tuple[SupportingTool, ...]
     callable_exposure: bool
     provenance: tuple[str, ...]
+    display_name: str | None = None
+    presence_state: str = "PRESENT"
+    explicit_negative_reason: str | None = None
 
     def __post_init__(self) -> None:
         """驗證 Host identity/grouping 與 exact callable surface。"""
@@ -288,13 +438,23 @@ class SupportingProviderDeclaration:
         object.__setattr__(self, "provider_id", _identifier(self.provider_id, "provider id"))
         if self.kind not in _PROVIDER_KINDS:
             raise ValueError("unsupported supporting provider kind")
+        if self.presence_state not in PROVIDER_PRESENCE_STATES:
+            raise ValueError("unsupported provider presence state")
         object.__setattr__(self, "host_identity", _identifier(self.host_identity, "host identity"))
         object.__setattr__(self, "host_grouping", _identifier_tuple(self.host_grouping, "host_grouping"))
-        object.__setattr__(self, "description", _safe_text(self.description, "provider description", 1024))
+        object.__setattr__(self, "description", _nullable_text(self.description, "provider description", 1024))
         object.__setattr__(self, "callable_tools", _tool_tuple(self.callable_tools))
         if not isinstance(self.callable_exposure, bool):
             raise ValueError("callable_exposure must be boolean")
         object.__setattr__(self, "provenance", _provenance(self.provenance))
+        if self.display_name is not None:
+            object.__setattr__(self, "display_name", _safe_text(self.display_name, "provider display name", 512))
+        if self.explicit_negative_reason is not None:
+            object.__setattr__(
+                self,
+                "explicit_negative_reason",
+                _safe_text(self.explicit_negative_reason, "provider negative reason", 512),
+            )
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, object]) -> "SupportingProviderDeclaration":
@@ -309,6 +469,9 @@ class SupportingProviderDeclaration:
             "callable_tools",
             "callable_exposure",
             "provenance",
+            "display_name",
+            "presence_state",
+            "explicit_negative_reason",
         }
         if set(payload) - allowed:
             raise ValueError("supporting provider declaration has unsupported fields")
@@ -321,12 +484,12 @@ class SupportingProviderDeclaration:
             host_identity=payload.get("host_identity"),  # type: ignore[arg-type]
             host_grouping=payload.get("host_grouping", ()),  # type: ignore[arg-type]
             description=payload.get("description"),  # type: ignore[arg-type]
-            callable_tools=tuple(
-                item if isinstance(item, SupportingToolDeclaration) else SupportingToolDeclaration.from_mapping(item)
-                for item in tools
-            ),
+            callable_tools=tuple(_tool_from_mapping(item) for item in tools),
             callable_exposure=payload.get("callable_exposure"),  # type: ignore[arg-type]
             provenance=payload.get("provenance", ()),  # type: ignore[arg-type]
+            display_name=payload.get("display_name"),  # type: ignore[arg-type]
+            presence_state=payload.get("presence_state", "PRESENT"),  # type: ignore[arg-type]
+            explicit_negative_reason=payload.get("explicit_negative_reason"),  # type: ignore[arg-type]
         )
 
     @property
@@ -350,9 +513,12 @@ class SupportingProviderDeclaration:
             "host_identity": self.host_identity,
             "host_grouping": list(self.host_grouping),
             "description": self.description,
+            "display_name": self.display_name,
             "callable_tools": [tool.to_mapping() for tool in self.callable_tools],
             "callable_exposure": self.callable_exposure,
             "provenance": list(self.provenance),
+            "presence_state": self.presence_state,
+            "explicit_negative_reason": self.explicit_negative_reason,
         }
 
 
@@ -441,6 +607,207 @@ class ReadinessEvidenceCertificate:
             "runtime_callable": self.runtime_callable,
         }
 
+    @property
+    def presence_state(self) -> str:
+        """既有 exact certificate 已證明該 Provider instance 存在。"""
+
+        return "PRESENT"
+
+    @property
+    def readiness_state(self) -> str:
+        """既有 exact certificate 維持 compatibility verified-ready 語意。"""
+
+        return "VERIFIED_READY"
+
+
+@dataclass(frozen=True)
+class AppReadinessEvidence:
+    """Typed `app/list` + `app/installed` readiness facts for one App."""
+
+    provider_id: str
+    accessible: bool
+    configured_enabled: bool
+    runtime_enabled: bool
+    callable: bool
+    metadata_readable: bool
+    runtime_name: str | None
+    runtime_evidence_available: bool = True
+    provenance: tuple[str, ...] = ()
+    readiness_source: str = "app/installed"
+
+    @property
+    def kind(self) -> str:
+        """Return the formal Provider kind represented by this evidence."""
+
+        return "app"
+
+    def __post_init__(self) -> None:
+        """Reject guessed App authorization/connection facts and bad source data."""
+
+        object.__setattr__(self, "provider_id", _identifier(self.provider_id, "provider id"))
+        for field_name in ("accessible", "configured_enabled", "runtime_enabled", "callable", "metadata_readable"):
+            if not isinstance(getattr(self, field_name), bool):
+                raise ValueError(f"{field_name} must be boolean")
+        if self.runtime_name is not None:
+            object.__setattr__(self, "runtime_name", _safe_text(self.runtime_name, "runtime name", 256))
+        if not isinstance(self.runtime_evidence_available, bool):
+            raise ValueError("runtime_evidence_available must be boolean")
+        if self.readiness_source != "app/installed":
+            raise ValueError("App readiness must come from app/installed")
+        object.__setattr__(self, "provenance", _provenance(self.provenance))
+
+    @property
+    def hard_eligible(self) -> bool:
+        """Return the deterministic App state predicate excluding tool metadata."""
+
+        return (
+            self.runtime_evidence_available
+            and self.accessible
+            and self.configured_enabled
+            and self.runtime_enabled
+            and self.callable
+            and self.metadata_readable
+        )
+
+    @property
+    def presence_state(self) -> str:
+        """官方 App response 已證明列出的 instance 存在。"""
+
+        return "PRESENT"
+
+    @property
+    def readiness_state(self) -> str:
+        """將官方 runtime facts 正規化為 readiness state，不偽造 auth/connection。"""
+
+        # 修改紀錄（2026-09-01，Steve Peng）
+        # 原始內容：runtime evidence 缺席時先回傳 PRESENT_UNVERIFIED，會掩蓋 app/list 已明示的 negative。
+        # 修改原因：explicit inaccessible/disabled 必須在 readiness surface 缺席時仍排除，unknown 只適用於未知狀態。
+        # 修改後功能：先保留官方已證明的 negative，再將真正未知的 runtime 狀態降級為 PRESENT_UNVERIFIED。
+        if not self.accessible or not self.configured_enabled:
+            return "KNOWN_UNAVAILABLE"
+        if not self.runtime_evidence_available:
+            return "PRESENT_UNVERIFIED"
+        if not self.runtime_enabled or not self.callable:
+            return "KNOWN_UNAVAILABLE"
+        return "VERIFIED_READY"
+
+    def _base_mapping(self) -> dict[str, object]:
+        return {
+            "kind": "app",
+            "provider_id": self.provider_id,
+            "readiness_source": self.readiness_source,
+            "accessible": self.accessible,
+            "configured_enabled": self.configured_enabled,
+            "runtime_enabled": self.runtime_enabled,
+            "callable": self.callable,
+            "metadata_readable": self.metadata_readable,
+            "runtime_name": self.runtime_name,
+            "runtime_evidence_available": self.runtime_evidence_available,
+            "presence_state": self.presence_state,
+            "readiness_state": self.readiness_state,
+            "provenance": list(self.provenance),
+        }
+
+    @property
+    def fingerprint(self) -> str:
+        """Fingerprint only the typed Host readiness facts."""
+
+        return _sha256(self._base_mapping())
+
+    def to_mapping(self) -> dict[str, object]:
+        """Return public readiness evidence without invented auth/connection fields."""
+
+        result = self._base_mapping()
+        result["fingerprint"] = self.fingerprint
+        return result
+
+
+@dataclass(frozen=True)
+class McpReadinessEvidence:
+    """Typed `mcpServerStatus/list` readiness facts for one MCP server."""
+
+    provider_id: str
+    runtime_status: str | None
+    auth_status: str
+    callable_tool_ids: tuple[str, ...]
+    plugin_id: str | None = None
+    provenance: tuple[str, ...] = ()
+    readiness_source: str = "mcpServerStatus/list"
+
+    @property
+    def kind(self) -> str:
+        """Return the formal Provider kind represented by this evidence."""
+
+        return "mcp"
+
+    def __post_init__(self) -> None:
+        """Validate current generated enum values and exact available tool IDs."""
+
+        object.__setattr__(self, "provider_id", _identifier(self.provider_id, "provider id"))
+        if self.runtime_status is not None and self.runtime_status not in {"notStarted", "starting", "connected", "authenticationRequired", "failed", "cancelled", "disabled"}:
+            raise ValueError("unsupported MCP runtime status")
+        if self.auth_status not in {"unknown", "unsupported", "notLoggedIn", "bearerToken", "oAuth"}:
+            raise ValueError("unsupported MCP auth status")
+        object.__setattr__(self, "callable_tool_ids", _identifier_tuple(self.callable_tool_ids, "callable_tool_ids"))
+        if self.plugin_id is not None:
+            object.__setattr__(self, "plugin_id", _identifier(self.plugin_id, "plugin provenance id"))
+        if self.readiness_source != "mcpServerStatus/list":
+            raise ValueError("MCP readiness must come from mcpServerStatus/list")
+        object.__setattr__(self, "provenance", _provenance(self.provenance))
+
+    @property
+    def hard_eligible(self) -> bool:
+        """Return the official runtime/auth gate before tool metadata matching."""
+
+        return self.readiness_state == "VERIFIED_READY"
+
+    @property
+    def presence_state(self) -> str:
+        """官方 MCP status response 已證明列出的 server instance 存在。"""
+
+        return "PRESENT"
+
+    @property
+    def readiness_state(self) -> str:
+        """將官方 MCP runtime/auth facts 正規化，不把 auth-required 猜成 auth denial。"""
+
+        if self.runtime_status in {"failed", "cancelled", "disabled"}:
+            return "KNOWN_UNAVAILABLE"
+        if (
+            self.runtime_status == "connected"
+            and self.auth_status in {"unsupported", "bearerToken", "oAuth"}
+            and bool(self.callable_tool_ids)
+        ):
+            return "VERIFIED_READY"
+        return "PRESENT_UNVERIFIED"
+
+    def _base_mapping(self) -> dict[str, object]:
+        return {
+            "kind": "mcp",
+            "provider_id": self.provider_id,
+            "readiness_source": self.readiness_source,
+            "runtime_status": self.runtime_status,
+            "auth_status": self.auth_status,
+            "callable_tool_ids": list(self.callable_tool_ids),
+            "plugin_id": self.plugin_id,
+            "presence_state": self.presence_state,
+            "readiness_state": self.readiness_state,
+            "provenance": list(self.provenance),
+        }
+
+    @property
+    def fingerprint(self) -> str:
+        """Fingerprint runtime, auth, available tools and provenance."""
+
+        return _sha256(self._base_mapping())
+
+    def to_mapping(self) -> dict[str, object]:
+        """Return public MCP readiness evidence; plugin identity is provenance only."""
+
+        result = self._base_mapping()
+        result["fingerprint"] = self.fingerprint
+        return result
+
 
 @dataclass(frozen=True)
 class ProviderDetailReference:
@@ -470,24 +837,36 @@ class ProviderDetailReference:
 
 @dataclass(frozen=True)
 class ProviderDigest:
-    """Hard-eligible Provider 的 deterministic digest；不含 semantic ranking。"""
+    """Selectable Provider 的 deterministic digest；不含 semantic ranking。"""
 
     provider_id: str
     kind: str
-    description: str
-    callable_tools: tuple[SupportingToolDeclaration, ...]
+    description: str | None
+    callable_tools: tuple[SupportingTool, ...]
     provenance: tuple[str, ...]
     fingerprint: str
+    display_name: str = "provider"
+    presence_state: str = "PRESENT"
+    readiness_state: str = "PRESENT_UNVERIFIED"
 
     def __post_init__(self) -> None:
         """驗證 digest fingerprint 與 public provider metadata。"""
 
         object.__setattr__(self, "provider_id", _identifier(self.provider_id, "provider id"))
-        if self.kind not in {"mcp", "builtin_tool"}:
-            raise ValueError("provider digest requires a certified provider kind")
-        object.__setattr__(self, "description", _safe_text(self.description, "provider description", 1024))
+        if self.kind not in FORMAL_SUPPORTING_PROVIDER_KINDS:
+            raise ValueError("provider digest requires a formal provider kind")
+        object.__setattr__(self, "display_name", _safe_text(self.display_name, "provider display name", 512))
+        object.__setattr__(self, "description", _nullable_text(self.description, "provider description", 1024))
         object.__setattr__(self, "callable_tools", _tool_tuple(self.callable_tools))
         object.__setattr__(self, "provenance", _provenance(self.provenance))
+        if self.presence_state not in PROVIDER_PRESENCE_STATES:
+            raise ValueError("provider digest has an unsupported presence state")
+        if self.readiness_state not in PROVIDER_READINESS_STATES:
+            raise ValueError("provider digest has an unsupported readiness state")
+        if self.presence_state != "PRESENT":
+            raise ValueError("provider digest requires PRESENT state")
+        if self.readiness_state == "KNOWN_UNAVAILABLE":
+            raise ValueError("known unavailable providers cannot have a digest")
         if _FINGERPRINT.fullmatch(self.fingerprint) is None:
             raise ValueError("provider digest requires a SHA-256 fingerprint")
 
@@ -497,16 +876,19 @@ class ProviderDigest:
         return {
             "provider_id": self.provider_id,
             "kind": self.kind,
+            "display_name": self.display_name,
             "description": self.description,
             "callable_tools": [tool.to_mapping() for tool in self.callable_tools],
             "provenance": list(self.provenance),
             "fingerprint": self.fingerprint,
+            "presence_state": self.presence_state,
+            "readiness_state": self.readiness_state,
         }
 
 
 @dataclass(frozen=True)
 class SupportingMetrics:
-    """Phase 3 preparation metrics；selected_count 永遠保持 0。"""
+    """Supporting preparation metrics；selected_count 在 preparation 階段保持 0。"""
 
     run_state: str
     discovered_count: int
@@ -514,6 +896,12 @@ class SupportingMetrics:
     selected_count: int
     digest_total_size: int
     detail_expansion_used: bool
+    present_count: int | None = None
+    selectable_count: int | None = None
+    verified_ready_count: int | None = None
+    present_unverified_count: int | None = None
+    metadata_insufficient_count: int | None = None
+    explicit_negative_count: int | None = None
 
     def __post_init__(self) -> None:
         """驗證 lazy run state 與未選擇 contract。"""
@@ -529,8 +917,32 @@ class SupportingMetrics:
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{field_name} must be a non-negative integer")
-        if self.hard_eligible_count > self.discovered_count:
-            raise ValueError("hard_eligible_count cannot exceed discovered_count")
+        defaults = {
+            "present_count": self.hard_eligible_count,
+            "selectable_count": self.hard_eligible_count,
+            "verified_ready_count": self.hard_eligible_count,
+            "present_unverified_count": 0,
+            "metadata_insufficient_count": 0,
+            "explicit_negative_count": 0,
+        }
+        for field_name, default in defaults.items():
+            value = getattr(self, field_name)
+            if value is None:
+                object.__setattr__(self, field_name, 0 if self.run_state == "not_run" else default)
+            elif isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{field_name} must be a non-negative integer or null")
+        if self.hard_eligible_count != self.verified_ready_count:
+            raise ValueError("hard_eligible_count must match verified_ready_count")
+        if self.present_count > self.discovered_count:
+            raise ValueError("present_count cannot exceed discovered_count")
+        if self.selectable_count > self.present_count:
+            raise ValueError("selectable_count cannot exceed present_count")
+        if self.verified_ready_count > self.selectable_count:
+            raise ValueError("verified_ready_count cannot exceed selectable_count")
+        if self.present_unverified_count > self.selectable_count:
+            raise ValueError("present_unverified_count cannot exceed selectable_count")
+        if self.verified_ready_count + self.present_unverified_count != self.selectable_count:
+            raise ValueError("readiness counts must account for every selectable provider")
         if self.selected_count != 0:
             raise ValueError("Phase 3 selected_count must remain zero")
         if not isinstance(self.detail_expansion_used, bool):
@@ -542,6 +954,12 @@ class SupportingMetrics:
                 self.hard_eligible_count,
                 self.selected_count,
                 self.digest_total_size,
+                self.present_count,
+                self.selectable_count,
+                self.verified_ready_count,
+                self.present_unverified_count,
+                self.metadata_insufficient_count,
+                self.explicit_negative_count,
             )
         ):
             raise ValueError("not_run metrics must contain zero counts")
@@ -556,6 +974,12 @@ class SupportingMetrics:
             "selected_count": self.selected_count,
             "digest_total_size": self.digest_total_size,
             "detail_expansion_used": self.detail_expansion_used,
+            "present_count": self.present_count,
+            "selectable_count": self.selectable_count,
+            "verified_ready_count": self.verified_ready_count,
+            "present_unverified_count": self.present_unverified_count,
+            "metadata_insufficient_count": self.metadata_insufficient_count,
+            "explicit_negative_count": self.explicit_negative_count,
         }
 
 
@@ -564,7 +988,7 @@ class SupportingRouteContext:
     """真正 lazy、read-only、stateless 的 Phase 3 Supporting context。"""
 
     execution_needs: tuple[ExecutionNeed, ...]
-    readiness_evidence: tuple[ReadinessEvidenceCertificate, ...]
+    readiness_evidence: tuple[ReadinessEvidenceCertificate | AppReadinessEvidence | McpReadinessEvidence, ...]
     provider_digests: tuple[ProviderDigest, ...]
     detail_references: tuple[ProviderDetailReference, ...]
     metrics: SupportingMetrics
@@ -611,9 +1035,14 @@ class SupportingRouteContext:
         }
 
     def hard_eligible_provider(self, provider_id: str) -> ProviderDigest | None:
-        """回傳目前 context 中 exact hard-eligible provider digest。"""
+        """回傳目前 context 中 exact selectable Provider digest；名稱保留相容性。"""
 
         return next((item for item in self.provider_digests if item.provider_id == provider_id), None)
+
+    def selectable_provider(self, provider_id: str) -> ProviderDigest | None:
+        """回傳目前 context 中 exact selectable Provider digest。"""
+
+        return self.hard_eligible_provider(provider_id)
 
 
 def validate_supporting_decision(
@@ -642,9 +1071,9 @@ def validate_supporting_decision(
         if detail_expansion_used or require_final:
             raise ValueError("request_detail cannot remain unresolved after one expansion")
         for provider_id, tool_ids in request_detail.requests:
-            digest = context.hard_eligible_provider(provider_id)
+            digest = context.selectable_provider(provider_id)
             if digest is None:
-                raise ValueError("detail request must reference a hard-eligible provider")
+                raise ValueError("detail request must reference a selectable provider")
             available_tools = {tool.id for tool in digest.callable_tools}
             if not set(tool_ids).issubset(available_tools):
                 raise ValueError("detail request must reference exact callable tool IDs")
@@ -673,14 +1102,26 @@ def normalize_execution_needs(
 def supporting_selection_status(
     execution_needs: Sequence[ExecutionNeed | Mapping[str, object]],
     final_selection: SupportingFinalSelection | None,
+    context: SupportingRouteContext | None = None,
 ) -> str:
-    """依結構化選擇數量 deterministic 產生三值 Supporting status。"""
+    """區分 semantic no-match、presence、metadata 與 explicit negative 結果。"""
 
     needs = _execution_needs(execution_needs)
     if not needs:
         return "not_required"
     if final_selection is not None and final_selection.selected_supporting_capabilities:
         return "selected"
+    if context is not None:
+        metrics = context.metrics
+        if metrics.present_count == 0:
+            if metrics.explicit_negative_count:
+                return "explicit_negative_exclusion"
+            return "no_present_supporting_provider"
+        if metrics.selectable_count == 0:
+            if metrics.explicit_negative_count:
+                return "explicit_negative_exclusion"
+            if metrics.metadata_insufficient_count:
+                return "insufficient_capability_metadata"
     return "no_matching_supporting_capability"
 
 
@@ -756,16 +1197,18 @@ def _validate_final_selection(
     if not selection.selected_supporting_capabilities and unmet_ids != need_ids:
         raise ValueError("no selected provider requires every execution need to be unmet")
     for item in selection.selected_supporting_capabilities:
+        if item.kind not in FORMAL_SUPPORTING_PROVIDER_KINDS:
+            raise ValueError("plugin package is not a formal selected supporting provider")
         digest = context.hard_eligible_provider(item.canonical_provider_id)
         if digest is None or digest.kind != item.kind:
-            raise ValueError("selected supporting provider is not hard-eligible with matching kind")
+            raise ValueError("selected supporting provider is not selectable with matching kind")
 
 
 def prepare_supporting_context(
     execution_needs: Sequence[ExecutionNeed | Mapping[str, object]],
     *,
     provider_declarations: Sequence[SupportingProviderDeclaration | Mapping[str, object]] = (),
-    readiness_evidence: Sequence[ReadinessEvidenceCertificate] = (),
+    readiness_evidence: Sequence[ReadinessEvidenceCertificate | AppReadinessEvidence | McpReadinessEvidence] = (),
 ) -> SupportingRouteContext:
     """準備 Supporting context；不呼叫 Provider、LLM、Receipt 或 production route。"""
 
@@ -781,19 +1224,56 @@ def prepare_supporting_context(
         item if isinstance(item, SupportingProviderDeclaration) else SupportingProviderDeclaration.from_mapping(item)
         for item in provider_declarations
     )
-    evidence = tuple(
-        item if isinstance(item, ReadinessEvidenceCertificate) else _reject_non_certificate(item)
-        for item in readiness_evidence
-    )
+    evidence = tuple(_validate_readiness_evidence(item) for item in readiness_evidence)
     evidence_by_key = {(item.provider_id, item.kind): item for item in evidence}
-    eligible: list[tuple[SupportingProviderDeclaration, ReadinessEvidenceCertificate]] = []
+    eligible: list[
+        tuple[
+            SupportingProviderDeclaration,
+            ReadinessEvidenceCertificate | AppReadinessEvidence | McpReadinessEvidence | None,
+            str,
+            tuple[SupportingTool, ...],
+            bool,
+        ]
+    ] = []
+    present_count = 0
+    metadata_insufficient_count = 0
+    explicit_negative_count = 0
     for declaration in sorted(declarations, key=lambda item: (item.provider_id.casefold(), item.provider_id, item.kind)):
-        certificate = evidence_by_key.get((declaration.provider_id, declaration.kind))
-        if certificate is None or not _matches_certificate(declaration, certificate):
+        if declaration.kind not in FORMAL_SUPPORTING_PROVIDER_KINDS:
+            explicit_negative_count += 1
             continue
-        eligible.append((declaration, certificate))
+        if declaration.presence_state != "PRESENT":
+            explicit_negative_count += 1
+            continue
+        present_count += 1
+        callable_tools = _usable_tools(declaration.callable_tools)
+        if declaration.explicit_negative_reason is not None:
+            explicit_negative_count += 1
+            continue
+        certificate = evidence_by_key.get((declaration.provider_id, declaration.kind))
+        if certificate is not None and _certificate_is_explicit_negative(certificate):
+            explicit_negative_count += 1
+            continue
+        readiness_state = _provider_readiness_state(declaration, certificate)
+        if readiness_state == "KNOWN_UNAVAILABLE":
+            explicit_negative_count += 1
+            continue
+        if not _has_sufficient_capability_metadata(declaration, callable_tools):
+            metadata_insufficient_count += 1
+            continue
+        if not declaration.callable_exposure:
+            explicit_negative_count += 1
+            continue
+        include_evidence = certificate is not None and (
+            isinstance(certificate, (AppReadinessEvidence, McpReadinessEvidence))
+            or _matches_certificate(declaration, certificate)
+        )
+        eligible.append((declaration, certificate, readiness_state, callable_tools, include_evidence))
 
-    digests = tuple(_build_digest(declaration, certificate) for declaration, certificate in eligible)
+    digests = tuple(
+        _build_digest(declaration, certificate, readiness_state, callable_tools)
+        for declaration, certificate, readiness_state, callable_tools, _ in eligible
+    )
     references = tuple(
         ProviderDetailReference(
             provider_id=digest.provider_id,
@@ -802,14 +1282,29 @@ def prepare_supporting_context(
         )
         for digest in digests
     )
-    matched_evidence = tuple(certificate for _, certificate in eligible)
+    matched_evidence = tuple(
+        certificate
+        for _, certificate, _, _, include_evidence in eligible
+        if certificate is not None and include_evidence
+    )
+    verified_ready_count = sum(item.readiness_state == "VERIFIED_READY" for item in digests)
+    present_unverified_count = sum(item.readiness_state == "PRESENT_UNVERIFIED" for item in digests)
     metrics = SupportingMetrics(
-        "ran",
-        len(declarations),
-        len(eligible),
-        0,
-        sum(len(json.dumps(digest.to_mapping(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))) for digest in digests),
-        False,
+        run_state="ran",
+        discovered_count=len(declarations),
+        hard_eligible_count=verified_ready_count,
+        selected_count=0,
+        digest_total_size=sum(
+            len(json.dumps(digest.to_mapping(), ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+            for digest in digests
+        ),
+        detail_expansion_used=False,
+        present_count=present_count,
+        selectable_count=len(digests),
+        verified_ready_count=verified_ready_count,
+        present_unverified_count=present_unverified_count,
+        metadata_insufficient_count=metadata_insufficient_count,
+        explicit_negative_count=explicit_negative_count,
     )
     fingerprint = _context_fingerprint(needs, matched_evidence, digests, references, metrics)
     return SupportingRouteContext(needs, matched_evidence, digests, references, metrics, fingerprint)
@@ -817,10 +1312,34 @@ def prepare_supporting_context(
 
 def _matches_certificate(
     declaration: SupportingProviderDeclaration,
-    certificate: ReadinessEvidenceCertificate,
+    certificate: ReadinessEvidenceCertificate | AppReadinessEvidence | McpReadinessEvidence,
 ) -> bool:
-    """以 exact Host evidence 比對 eligibility；任何差異均排除。"""
+    """以 exact Host evidence 判斷 verified-ready；差異只會降級為 unverified。"""
 
+    if isinstance(certificate, AppReadinessEvidence):
+        return (
+            declaration.kind == "app"
+            and declaration.provider_id == certificate.provider_id
+            and declaration.callable_exposure
+            and certificate.hard_eligible
+            and bool(declaration.callable_tools)
+            and all(
+                isinstance(tool, SupportingToolSummary)
+                and tool.is_enabled
+                and tool.disabled_reason is None
+                for tool in declaration.callable_tools
+            )
+        )
+    if isinstance(certificate, McpReadinessEvidence):
+        declared_ids = _tool_ids(declaration.callable_tools)
+        return (
+            declaration.kind == "mcp"
+            and declaration.provider_id == certificate.provider_id
+            and declaration.callable_exposure
+            and certificate.hard_eligible
+            and declared_ids == certificate.callable_tool_ids
+            and bool(declared_ids)
+        )
     if (declaration.kind, declaration.provider_id) not in _CERTIFIED_PROVIDER_SCOPE:
         return False
     if not declaration.callable_exposure:
@@ -838,31 +1357,84 @@ def _matches_certificate(
 
 def _build_digest(
     declaration: SupportingProviderDeclaration,
-    certificate: ReadinessEvidenceCertificate,
+    certificate: ReadinessEvidenceCertificate | AppReadinessEvidence | McpReadinessEvidence | None,
+    readiness_state: str,
+    callable_tools: Sequence[SupportingTool],
 ) -> ProviderDigest:
-    """只對 hard-eligible declaration 建立 deterministic digest。"""
+    """對有足夠 metadata 且未被 explicit negative 排除的 Provider 建立 digest。"""
 
     payload = {
         "provider_id": declaration.provider_id,
         "kind": declaration.kind,
+        "display_name": declaration.display_name or declaration.provider_id,
         "description": declaration.description,
-        "callable_tools": [tool.to_mapping() for tool in declaration.callable_tools],
-        "readiness_evidence_fingerprint": certificate.fingerprint,
+        "callable_tools": [tool.to_mapping() for tool in callable_tools],
+        "readiness_evidence_fingerprint": None if certificate is None else certificate.fingerprint,
+        "presence_state": declaration.presence_state,
+        "readiness_state": readiness_state,
         "provenance": list(declaration.provenance),
     }
     return ProviderDigest(
         provider_id=declaration.provider_id,
         kind=declaration.kind,
         description=declaration.description,
-        callable_tools=declaration.callable_tools,
+        callable_tools=tuple(callable_tools),
         provenance=declaration.provenance,
         fingerprint=_sha256(payload),
+        display_name=declaration.display_name or declaration.provider_id,
+        presence_state=declaration.presence_state,
+        readiness_state=readiness_state,
     )
+
+
+def _usable_tools(value: Sequence[SupportingTool]) -> tuple[SupportingTool, ...]:
+    """只保留 Host 明確標示可用的 tool summary；不推導 disabled tool capability。"""
+
+    return tuple(
+        tool
+        for tool in value
+        if not isinstance(tool, SupportingToolSummary)
+        or (tool.is_enabled and tool.disabled_reason is None)
+    )
+
+
+def _has_sufficient_capability_metadata(
+    declaration: SupportingProviderDeclaration,
+    callable_tools: Sequence[SupportingTool],
+) -> bool:
+    """確認 public name/description 與至少一個 tool summary 足以交給 LLM。"""
+
+    return bool(
+        (declaration.display_name or declaration.description)
+        and callable_tools
+        and all(bool(tool.description.strip()) for tool in callable_tools)
+    )
+
+
+def _certificate_is_explicit_negative(
+    certificate: ReadinessEvidenceCertificate | AppReadinessEvidence | McpReadinessEvidence,
+) -> bool:
+    """辨識 Host 明確 negative，不把 absence of readiness evidence 當 negative。"""
+
+    return isinstance(certificate, (AppReadinessEvidence, McpReadinessEvidence)) and certificate.readiness_state == "KNOWN_UNAVAILABLE"
+
+
+def _provider_readiness_state(
+    declaration: SupportingProviderDeclaration,
+    certificate: ReadinessEvidenceCertificate | AppReadinessEvidence | McpReadinessEvidence | None,
+) -> str:
+    """將 typed readiness evidence 正規化為 ready 或 present-unverified。"""
+
+    if certificate is None:
+        return "PRESENT_UNVERIFIED"
+    if isinstance(certificate, (AppReadinessEvidence, McpReadinessEvidence)):
+        return certificate.readiness_state
+    return "VERIFIED_READY" if _matches_certificate(declaration, certificate) else "PRESENT_UNVERIFIED"
 
 
 def _context_fingerprint(
     needs: Sequence[ExecutionNeed],
-    evidence: Sequence[ReadinessEvidenceCertificate],
+    evidence: Sequence[ReadinessEvidenceCertificate | AppReadinessEvidence | McpReadinessEvidence],
     digests: Sequence[ProviderDigest],
     references: Sequence[ProviderDetailReference],
     metrics: SupportingMetrics,
@@ -897,18 +1469,48 @@ def _execution_needs(value: Sequence[ExecutionNeed | Mapping[str, object]]) -> t
     return tuple(result)
 
 
-def _tool_tuple(value: Sequence[SupportingToolDeclaration]) -> tuple[SupportingToolDeclaration, ...]:
+def _tool_tuple(value: Sequence[SupportingTool]) -> tuple[SupportingTool, ...]:
     """固定 tool declaration 順序，拒絕重複 exact tool ID。"""
 
     if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
         raise ValueError("callable_tools must be a sequence")
     tools = tuple(value)
-    if not all(isinstance(item, SupportingToolDeclaration) for item in tools):
-        raise TypeError("callable_tools must contain SupportingToolDeclaration")
+    if not all(isinstance(item, (SupportingToolDeclaration, SupportingToolSummary)) for item in tools):
+        raise TypeError("callable_tools must contain validated tool declarations or summaries")
     ordered = tuple(sorted(tools, key=lambda item: (item.id.casefold(), item.id)))
     if len({item.id for item in ordered}) != len(ordered):
         raise ValueError("callable_tools cannot contain duplicate IDs")
     return ordered
+
+
+def _tool_from_mapping(value: object) -> SupportingTool:
+    """Parse either legacy schema declarations or official metadata summaries."""
+
+    if isinstance(value, (SupportingToolDeclaration, SupportingToolSummary)):
+        return value
+    if not isinstance(value, Mapping):
+        raise TypeError("callable_tools must contain mappings or validated tool values")
+    if "schema" in value:
+        return SupportingToolDeclaration.from_mapping(value)
+    return SupportingToolSummary.from_mapping(value)
+
+
+def _tool_ids(value: Sequence[SupportingTool]) -> tuple[str, ...]:
+    """Return stable tool IDs without interpreting capability semantics."""
+
+    return tuple(sorted((tool.id for tool in value), key=lambda item: (item.casefold(), item)))
+
+
+def _validate_readiness_evidence(
+    value: object,
+) -> ReadinessEvidenceCertificate | AppReadinessEvidence | McpReadinessEvidence:
+    """Accept only designated typed readiness evidence; never infer from mappings."""
+
+    if isinstance(value, (ReadinessEvidenceCertificate, AppReadinessEvidence, McpReadinessEvidence)):
+        return value
+    raise TypeError(
+        "readiness_evidence must contain ReadinessEvidenceCertificate, AppReadinessEvidence, or McpReadinessEvidence instances"
+    )
 
 
 def _reject_non_certificate(value: object) -> ReadinessEvidenceCertificate:
@@ -963,6 +1565,14 @@ def _safe_text(value: object, field: str, maximum: int) -> str:
     ):
         raise ValueError(f"{field} must be bounded public text")
     return result
+
+
+def _nullable_text(value: object, field: str, maximum: int) -> str | None:
+    """Validate an official nullable public description without inventing text."""
+
+    if value is None:
+        return None
+    return _safe_text(value, field, maximum)
 
 
 def _canonical_schema(value: object) -> str:

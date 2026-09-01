@@ -6,7 +6,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath, PureWindowsPath
 import re
+import unicodedata
 
+# 修改紀錄（2026-08-31，Steve Peng）
+# 原始內容：TaskAnalysis 僅能輸出原始四類 arrays，retrieval 沒有一致的 indexed item projection。
+# 修改原因：Skill candidate retrieval 與 supports reference 必須共用 deterministic、去重後的 TaskAnalysis inputs。
+# 修改後功能：提供四類 indexed item 與 NFKC/casefold exact-deduplicated retrieval projection；不加入 semantic classification。
 
 _TASK_ANALYSIS_FIELDS = frozenset(
     {
@@ -64,6 +69,28 @@ class TaskAnalysis:
             "constraints": list(self.constraints),
             "quality_expectations": list(self.quality_expectations),
         }
+
+    def indexed_items(self) -> tuple[tuple[str, int, str], ...]:
+        """回傳四類可供 Skill `supports` 引用的 stable indexed items。"""
+
+        return tuple(
+            (section, index, value)
+            for section in _ITEM_FIELDS
+            for index, value in enumerate(getattr(self, section))
+        )
+
+    def retrieval_items(self) -> tuple[str, ...]:
+        """回傳 retrieval 用文字；只做 deterministic normalization/dedup。"""
+
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in (self.task_summary, *(item[2] for item in self.indexed_items())):
+            normalized = unicodedata.normalize("NFKC", value).casefold().strip()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            result.append(value)
+        return tuple(result)
 
 
 def validate_task_analysis(payload: Mapping[str, object]) -> TaskAnalysis:

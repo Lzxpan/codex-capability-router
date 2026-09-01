@@ -172,13 +172,16 @@ class Phase2RouteContextTests(unittest.TestCase):
         context = prepare_route_context(_analysis(), skill_roots=(self.root,), runtime=runtime)
         by_id = {item.id: item for item in context.skill_eligibility}
 
-        self.assertEqual([profile.id for profile in context.candidates], ["canonical-source-skill"])
+        self.assertEqual(
+            [profile.id for profile in context.candidates],
+            ["canonical-source-skill", "unknown-skill"],
+        )
         self.assertTrue(by_id["canonical-source-skill"].eligible)
         self.assertFalse(by_id["controller-skill"].eligible)
         self.assertTrue(by_id["controller-skill"].controller)
         self.assertFalse(by_id["routing-support-skill"].eligible)
         self.assertTrue(by_id["routing-support-skill"].routing_support)
-        self.assertFalse(by_id["unknown-skill"].eligible)
+        self.assertTrue(by_id["unknown-skill"].eligible)
 
     def test_metrics_and_zero_available_ratio(self) -> None:
         """metrics 保留 available/candidate/selected/reduction，零 available ratio 為 null。"""
@@ -248,11 +251,11 @@ class Phase2RouteContextTests(unittest.TestCase):
                 }
             )
 
-    def test_explain_code_phase1_contract_remains_available_only_with_runtime_fact(self) -> None:
-        """Phase 1 explain-code fix 在 Skill context preparation 中不回歸。"""
+    def test_explain_code_phase1_contract_is_available_from_trusted_root(self) -> None:
+        """合法 explain-code trusted-root Skill 不依賴 runtime availability fact。"""
 
-        unknown_context = prepare_route_context(_analysis(), skill_roots=(EXPLAIN_CODE_FIXTURE,))
-        self.assertEqual(unknown_context.candidates, ())
+        trusted_context = prepare_route_context(_analysis(), skill_roots=(EXPLAIN_CODE_FIXTURE,))
+        self.assertEqual([profile.id for profile in trusted_context.candidates], ["explain-code"])
         runtime = import_runtime_envelope(
             {"capabilities": [_runtime_record("explain-code", "available")]}
         )

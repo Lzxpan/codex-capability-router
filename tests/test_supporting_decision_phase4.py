@@ -15,6 +15,7 @@ from codex_capability_router.route_context import (
 )
 from codex_capability_router.routing import SelectionReceipt, SelectionRouteInput, route
 from codex_capability_router.supporting_context import (
+    ExecutionAttempt,
     ExecutionNeed,
     ReadinessEvidenceCertificate,
     SupportingCapabilitySelection,
@@ -265,6 +266,9 @@ class Phase4SupportingDecisionTests(unittest.TestCase):
         self.assertIsInstance(receipt, SelectionReceipt)
         self.assertEqual(receipt["supporting_selection_status"], "selected")
         self.assertEqual(receipt["selected_supporting_capabilities"][0]["canonical_provider_id"], "node_repl")
+        self.assertEqual(receipt["selected_supporting_capabilities"][0]["presence_state"], "PRESENT")
+        self.assertEqual(receipt["selected_supporting_capabilities"][0]["readiness_state"], "VERIFIED_READY")
+        self.assertEqual(len(receipt["selected_supporting_capabilities"][0]["digest_fingerprint"]), 64)
         self.assertEqual(receipt["selection_state"], "FINALIZED")
 
     def test_valid_selected_functions_exec_command_is_exact_builtin_scope(self) -> None:
@@ -302,8 +306,8 @@ class Phase4SupportingDecisionTests(unittest.TestCase):
         self.assertEqual(receipt["selected_supporting_capabilities"][0]["canonical_provider_id"], "functions.exec_command")
         self.assertEqual(receipt["selected_provider_readiness"][0]["readiness"]["connection"], "not_required")
 
-    def test_other_mcp_or_builtin_certificate_does_not_expand_scope(self) -> None:
-        """其他 MCP/builtin 即使有同形 certificate 也不自動成為正式候選。"""
+    def test_other_mcp_or_builtin_with_valid_evidence_are_candidates(self) -> None:
+        """formal kind 的其他 MCP/builtin 也可在 presence 已知時進入候選。"""
 
         other_mcp = _provider("other_mcp", kind="mcp", tool_id="read")
         other_builtin = _provider("functions.other", kind="builtin_tool", tool_id="functions.other")
@@ -313,6 +317,8 @@ class Phase4SupportingDecisionTests(unittest.TestCase):
             readiness_evidence=(_certificate(other_mcp), _certificate(other_builtin)),
         )
         self.assertEqual(context.metrics.hard_eligible_count, 0)
+        self.assertEqual(context.metrics.selectable_count, 2)
+        self.assertEqual(context.metrics.present_unverified_count, 2)
 
     def test_partial_unmet_stays_selected(self) -> None:
         """至少一個 Provider selected 時，即使仍有 unmet，status 仍為 selected。"""
@@ -350,8 +356,30 @@ class Phase4SupportingDecisionTests(unittest.TestCase):
                 ),
             )
         )
-        self.assertEqual(receipt["supporting_selection_status"], "no_matching_supporting_capability")
+        self.assertEqual(receipt["supporting_selection_status"], "no_present_supporting_provider")
         self.assertEqual(receipt["unmet_execution_needs"][0]["need"], self.need.need)
+
+    def test_present_unverified_provider_semantic_no_match_is_distinct(self) -> None:
+        """有 selectable unverified Provider 但語意未選取時，才回報 semantic no-match。"""
+
+        final = SupportingFinalSelection(
+            (),
+            (UnmetExecutionNeed(self.need.need, "目前候選能力不符合此需求。"),),
+        )
+        decision = self._decision(needs=(self.need,), final=final)
+        receipt = route(
+            self._route_request(
+                decision,
+                provider_declarations=(self.provider,),
+                readiness_evidence=(),
+                supporting_selection={
+                    "request_detail": None,
+                    "final_selection": final.to_mapping(),
+                },
+            )
+        )
+        self.assertEqual(receipt["supporting_selection_status"], "no_matching_supporting_capability")
+        self.assertEqual(receipt["supporting_metrics"]["present_unverified_count"], 1)
 
     def test_request_detail_is_bounded_and_route_rejects_unresolved_payload(self) -> None:
         """request_detail 只能引用 hard-eligible exact tool，route 不接受 unresolved phase。"""
@@ -389,13 +417,17 @@ class Phase4SupportingDecisionTests(unittest.TestCase):
                 context,
             )
 
-    def test_unverified_provider_and_kind_mismatch_are_rejected(self) -> None:
-        """Python 只驗證 hard eligibility/kind，不替 Codex 改選其他 Provider。"""
+    def test_unverified_provider_is_selectable_but_kind_mismatch_is_rejected(self) -> None:
+        """readiness unknown 不再阻擋 selectable；Python 仍拒絕錯誤 Provider kind。"""
 
         context = prepare_supporting_context((self.need,), provider_declarations=(self.provider,), readiness_evidence=())
         payload = self._final_payload()
-        with self.assertRaises(ValueError):
-            validate_supporting_decision(payload, (self.need,), context)
+        validated = validate_supporting_decision(payload, (self.need,), context)
+        self.assertEqual(
+            validated.final_selection.selected_supporting_capabilities[0].canonical_provider_id,
+            "node_repl",
+        )
+        self.assertEqual(context.provider_digests[0].readiness_state, "PRESENT_UNVERIFIED")
         wrong_kind = {
             "request_detail": None,
             "final_selection": {
@@ -441,15 +473,47 @@ class Phase4SupportingDecisionTests(unittest.TestCase):
             (),
         )
         decision = self._decision(needs=(self.need,), final=final)
+        original_request = self._route_request(
+            decision,
+            provider_declarations=(self.provider,),
+            readiness_evidence=(self.evidence,),
+            supporting_selection=self._final_payload(),
+        )
         with self.assertRaises(ValueError):
-            route(
-                self._route_request(
-                    decision,
-                    provider_declarations=(changed,),
-                    readiness_evidence=(self.evidence,),
-                    supporting_selection=self._final_payload(),
-                )
+            route(replace(original_request, supporting_provider_declarations=(changed,)))
+
+    def test_present_unverified_selection_is_finalized_with_readiness_state(self) -> None:
+        """PRESENT_UNVERIFIED 可 finalized，且 Receipt 明確保留 readiness。"""
+
+        final = SupportingFinalSelection(
+            (SupportingCapabilitySelection("mcp", "node_repl", "Codex selected the present provider."),),
+            (),
+        )
+        decision = self._decision(needs=(self.need,), final=final)
+        receipt = route(
+            self._route_request(
+                decision,
+                provider_declarations=(self.provider,),
+                readiness_evidence=(),
+                supporting_selection={"request_detail": None, "final_selection": final.to_mapping()},
             )
+        )
+        selected = receipt["selected_supporting_capabilities"][0]
+        self.assertEqual(selected["presence_state"], "PRESENT")
+        self.assertEqual(selected["readiness_state"], "PRESENT_UNVERIFIED")
+
+        before = receipt.to_mapping()
+        attempt = ExecutionAttempt(
+            selection_receipt_fingerprint=receipt.receipt_fingerprint,
+            execution_need=self.need.need,
+            provider_kind="mcp",
+            provider_id="node_repl",
+            readiness_state="PRESENT_UNVERIFIED",
+            outcome="UNAVAILABLE",
+            error_category="runtime unavailable",
+        )
+        self.assertEqual(attempt.to_mapping()["selection_receipt_fingerprint"], receipt.receipt_fingerprint)
+        self.assertEqual(receipt.to_mapping(), before)
 
     def test_stale_skill_context_rejects_finalize(self) -> None:
         """Skill context fingerprint 改變時，正式 route 不猜替代 context。"""

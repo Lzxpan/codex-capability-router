@@ -13,8 +13,11 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from typing import TYPE_CHECKING
 
 from .models import CapabilityRecord, DiscoveryResult
+if TYPE_CHECKING:
+    from .host_exposure import HostSkillExposureEnvelope
 from .inventory import (
     BasicProfile,
     EnrichedProfile,
@@ -32,6 +35,11 @@ from .supporting_context import (
 )
 from .task_analysis import TaskAnalysis, validate_task_analysis
 
+# 修改紀錄（2026-08-31，Steve Peng）
+# 原始內容：Skill context 只有 available/candidate/selected legacy metrics，selection item 也沒有 TaskAnalysis supports reference。
+# 修改原因：v0.2 coverage upgrade 需要保留 structured coverage evidence，同時維持 context read-only、stateless 與既有 compatibility projection。
+# 修改後功能：加入 supports、Host exposed/Router available 及 Skill-layer reference metrics；不進行 semantic coverage 判斷。
+
 
 ROUTE_CONTEXT_CONTRACT_VERSION = "v0.2-skill-route-context-v1"
 DECISION_PAYLOAD_CONTRACT_VERSION = "v0.2-validated-decision-payloads-v1"
@@ -46,10 +54,13 @@ class ValidatedSkillSelection:
     task_summary: str
     selected_skills: tuple[tuple[str, str], ...]
     selection_status: str
+    supports: tuple[tuple[tuple[str, int], ...], ...] = ()
 
     def __post_init__(self) -> None:
         """重用既有 selection validator，避免建立第二套 Skill semantics。"""
 
+        if self.supports and len(self.supports) != len(self.selected_skills):
+            raise ValueError("supports must align with selected_skills")
         payload = self.to_mapping()
         validated = validate_selection(payload)
         object.__setattr__(self, "task_summary", validated["task_summary"])
@@ -58,17 +69,28 @@ class ValidatedSkillSelection:
             "selected_skills",
             tuple((item["id"], item["reason"]) for item in validated["selected_skills"]),
         )
+        parsed_supports = tuple(
+            tuple((reference["section"], reference["index"]) for reference in item.get("supports", ()))
+            for item in validated["selected_skills"]
+        )
+        object.__setattr__(self, "supports", parsed_supports if any(parsed_supports) else ())
         object.__setattr__(self, "selection_status", validated["selection_status"])
 
     def to_mapping(self) -> dict[str, object]:
         """輸出新的 selection mapping/list 副本。"""
 
+        items: list[dict[str, object]] = []
+        for index, (skill_id, reason) in enumerate(self.selected_skills):
+            item: dict[str, object] = {"id": skill_id, "reason": reason}
+            if self.supports:
+                item["supports"] = [
+                    {"section": section, "index": item_index}
+                    for section, item_index in self.supports[index]
+                ]
+            items.append(item)
         return {
             "task_summary": self.task_summary,
-            "selected_skills": [
-                {"id": skill_id, "reason": reason}
-                for skill_id, reason in self.selected_skills
-            ],
+            "selected_skills": items,
             "selection_status": self.selection_status,
         }
 
@@ -92,6 +114,8 @@ class ValidatedDecisionPayloads:
             raise TypeError("skill_selection must be a ValidatedSkillSelection or null")
         if self.skill_selection is not None and self.skill_selection.task_summary != self.task_analysis.task_summary:
             raise ValueError("skill selection task_summary does not match TaskAnalysis")
+        if self.skill_selection is not None:
+            validate_selection(self.skill_selection.to_mapping(), task_analysis=self.task_analysis)
         object.__setattr__(self, "execution_needs", normalize_execution_needs(self.execution_needs))
         if self.final_supporting_decision is not None and not isinstance(
             self.final_supporting_decision, SupportingFinalSelection
@@ -136,11 +160,15 @@ def validate_decision_payloads(payload: Mapping[str, object]) -> ValidatedDecisi
     if selection_payload is not None:
         if not isinstance(selection_payload, Mapping):
             raise ValueError("skill_selection must be an object or null")
-        validated = validate_selection(selection_payload)
+        validated = validate_selection(selection_payload, task_analysis=task_analysis)
         selection = ValidatedSkillSelection(
             task_summary=validated["task_summary"],
             selected_skills=tuple((item["id"], item["reason"]) for item in validated["selected_skills"]),
             selection_status=validated["selection_status"],
+            supports=tuple(
+                tuple((reference["section"], reference["index"]) for reference in item.get("supports", ()))
+                for item in validated["selected_skills"]
+            ),
         )
     execution_needs = normalize_execution_needs(payload.get("execution_needs", ()))
     final_supporting_decision = validate_supporting_final_selection_payload(
@@ -162,6 +190,16 @@ class SkillContextMetrics:
     candidate_count: int
     selected_count: int = 0
     candidate_reduction_ratio: float | None = None
+    discovered_skill_count: int | None = None
+    host_exposed_skill_count: int | None = None
+    router_available_skill_count: int | None = None
+    task_analysis_indexed_item_count: int = 0
+    skill_supported_item_count: int = 0
+    skill_unreferenced_item_count: int = 0
+    possibly_relevant_unavailable_count: int = 0
+    coverage_check_used: bool = False
+    # 新增欄位置於既有欄位之後，保留既有 positional compatibility。
+    trusted_root_skill_count: int | None = None
 
     def __post_init__(self) -> None:
         """驗證 bounded counts，並在 available=0 時固定 ratio=null。"""
@@ -170,6 +208,31 @@ class SkillContextMetrics:
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{field_name} must be a non-negative integer")
+        for field_name in (
+            "discovered_skill_count",
+            "trusted_root_skill_count",
+            "host_exposed_skill_count",
+            "router_available_skill_count",
+            "task_analysis_indexed_item_count",
+            "skill_supported_item_count",
+            "skill_unreferenced_item_count",
+            "possibly_relevant_unavailable_count",
+        ):
+            value = getattr(self, field_name)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+                raise ValueError(f"{field_name} must be a non-negative integer or null")
+        if not isinstance(self.coverage_check_used, bool):
+            raise ValueError("coverage_check_used must be boolean")
+        if self.skill_supported_item_count + self.skill_unreferenced_item_count > self.task_analysis_indexed_item_count:
+            raise ValueError("Skill reference counts exceed indexed TaskAnalysis items")
+        if self.discovered_skill_count is not None and self.router_available_skill_count is not None:
+            if self.router_available_skill_count > self.discovered_skill_count:
+                raise ValueError("router_available_skill_count cannot exceed discovered_skill_count")
+        if self.trusted_root_skill_count is not None and self.router_available_skill_count is not None:
+            if self.router_available_skill_count > self.trusted_root_skill_count:
+                raise ValueError("router_available_skill_count cannot exceed trusted_root_skill_count")
+        # Host exposed count 僅是 optional observation，不是 formal availability
+        # universe；它可以小於 trusted-root available count。
         if self.candidate_count > self.available_count:
             raise ValueError("candidate_count cannot exceed available_count")
         if self.selected_count > self.candidate_count:
@@ -191,6 +254,19 @@ class SkillContextMetrics:
             "candidate_count": self.candidate_count,
             "selected_count": self.selected_count,
             "candidate_reduction_ratio": self.candidate_reduction_ratio,
+            "discovered_skill_count": self.discovered_skill_count,
+            "trusted_root_skill_count": self.trusted_root_skill_count,
+            "host_exposed_skill_count": self.host_exposed_skill_count,
+            "router_available_skill_count": (
+                self.available_count if self.router_available_skill_count is None else self.router_available_skill_count
+            ),
+            "candidate_skill_count": self.candidate_count,
+            "selected_skill_count": self.selected_count,
+            "task_analysis_indexed_item_count": self.task_analysis_indexed_item_count,
+            "skill_supported_item_count": self.skill_supported_item_count,
+            "skill_unreferenced_item_count": self.skill_unreferenced_item_count,
+            "possibly_relevant_unavailable_count": self.possibly_relevant_unavailable_count,
+            "coverage_check_used": self.coverage_check_used,
         }
 
 
@@ -273,6 +349,8 @@ class SkillRouteContext:
     retrieval_rounds: int
     expanded_retrieval: bool
     context_fingerprint: str
+    # Host snapshot 僅供 observation/audit，不參與 formal Skill eligibility。
+    host_exposure_fingerprint: str | None = None
 
     @property
     def task_analysis(self) -> TaskAnalysis:
@@ -308,6 +386,7 @@ class SkillRouteContext:
             "retrieval_rounds": self.retrieval_rounds,
             "expanded_retrieval": self.expanded_retrieval,
             "context_fingerprint": self.context_fingerprint,
+            "host_exposure_fingerprint": self.host_exposure_fingerprint,
         }
 
     def __post_init__(self) -> None:
@@ -321,6 +400,8 @@ class SkillRouteContext:
             raise ValueError("expanded_retrieval must be boolean")
         if _FINGERPRINT.fullmatch(self.context_fingerprint) is None:
             raise ValueError("route context requires a SHA-256 context fingerprint")
+        if self.host_exposure_fingerprint is not None and _FINGERPRINT.fullmatch(self.host_exposure_fingerprint) is None:
+            raise ValueError("host exposure fingerprint must be a SHA-256 digest or null")
         object.__setattr__(self, "candidates", tuple(self.candidates))
         object.__setattr__(self, "enriched_profiles", tuple(self.enriched_profiles))
         object.__setattr__(self, "skill_eligibility", tuple(self.skill_eligibility))
@@ -338,6 +419,7 @@ class SkillRouteContext:
             metrics=self.metrics,
             retrieval_rounds=self.retrieval_rounds,
             expanded_retrieval=self.expanded_retrieval,
+            host_exposure_fingerprint=self.host_exposure_fingerprint,
         )
         if self.context_fingerprint != expected:
             raise ValueError("route context fingerprint does not match its contents")
@@ -355,6 +437,7 @@ def prepare_route_context(
     runtime: DiscoveryResult | None = None,
     cli: DiscoveryResult | None = None,
     manual: DiscoveryResult | None = None,
+    host_exposure: HostSkillExposureEnvelope | None = None,
 ) -> SkillRouteContext:
     """準備 v0.2 Skill-only context；不呼叫 LLM、不建 Receipt、不接觸 Provider。"""
 
@@ -375,11 +458,13 @@ def prepare_route_context(
         runtime=runtime,
         cli=cli,
         manual=manual,
+        host_exposure=host_exposure,
     )
     preparation = prepare_selection(
         inventory,
         analysis.task_summary,
         work_parts=work_parts,
+        task_analysis_items=analysis.retrieval_items(),
         explicit_skill_ids=explicit_skill_ids,
         known_enriched_profiles=known_enriched_profiles,
         use_expanded=expanded_retrieval,
@@ -406,6 +491,15 @@ def prepare_route_context(
         available_count=len(inventory.available_records),
         candidate_count=len(candidates),
         selected_count=0,
+        discovered_skill_count=len(inventory.profiles),
+        trusted_root_skill_count=len(inventory.trusted_root_skill_ids),
+        host_exposed_skill_count=(
+            None if host_exposure is None else len(inventory.host_exposed_skill_ids)
+        ),
+        router_available_skill_count=len(inventory.available_records),
+        task_analysis_indexed_item_count=len(analysis.indexed_items()),
+        skill_supported_item_count=0,
+        skill_unreferenced_item_count=len(analysis.indexed_items()),
     )
     decision_payloads = ValidatedDecisionPayloads(task_analysis=analysis)
     retrieval_rounds = preparation.state.retrieval_rounds
@@ -421,6 +515,9 @@ def prepare_route_context(
         metrics=metrics,
         retrieval_rounds=retrieval_rounds,
         expanded_retrieval=expanded_used,
+        host_exposure_fingerprint=(
+            None if host_exposure is None else host_exposure.snapshot_fingerprint
+        ),
     )
     return SkillRouteContext(
         validated_decision_payloads=decision_payloads,
@@ -434,6 +531,9 @@ def prepare_route_context(
         retrieval_rounds=retrieval_rounds,
         expanded_retrieval=expanded_used,
         context_fingerprint=fingerprint,
+        host_exposure_fingerprint=(
+            None if host_exposure is None else host_exposure.snapshot_fingerprint
+        ),
     )
 
 
@@ -480,9 +580,14 @@ def _context_fingerprint(
     metrics: SkillContextMetrics,
     retrieval_rounds: int,
     expanded_retrieval: bool,
+    host_exposure_fingerprint: str | None = None,
 ) -> str:
     """固定正式 context input，排除 root path、完整 prompt、SKILL body 與 Provider。"""
 
+    metrics_mapping = metrics.to_mapping()
+    # Host exposure 僅是 optional observation；排除其 count 於 formal context
+    # identity，避免 Host snapshot 成為 Skill routing gate。
+    metrics_mapping["host_exposed_skill_count"] = None
     payload = {
         "contract_version": ROUTE_CONTEXT_CONTRACT_VERSION,
         "validated_decision_payloads": decision_payloads.to_mapping(),
@@ -498,9 +603,11 @@ def _context_fingerprint(
             {"id": skill_id, "sources": list(sources)}
             for skill_id, sources in provenance
         ],
-        "metrics": metrics.to_mapping(),
+        "metrics": metrics_mapping,
         "retrieval_rounds": retrieval_rounds,
         "expanded_retrieval": expanded_retrieval,
+        # Host exposure 僅是 optional observation；snapshot 改變或缺失時，
+        # 不得使 formal Skill context 失效。
     }
     return _sha256(payload)
 

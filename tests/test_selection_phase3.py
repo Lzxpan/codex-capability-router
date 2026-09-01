@@ -128,8 +128,8 @@ class SelectionContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_selection(output, inventory=refreshed, handoffs=handoffs)
 
-    def test_final_validator_rejects_unavailable_disabled_unknown_controller_and_support(self) -> None:
-        """五種不可選 role/status 不得因 handoff 或 selected output 進入 final。"""
+    def test_final_validator_rejects_unavailable_disabled_controller_and_support(self) -> None:
+        """unavailable、disabled、controller 與 routing-support 仍不可進入 final。"""
 
         root = Path(self.temp_dir.name)
         _write_skill(root, "phase3-valid")
@@ -156,6 +156,9 @@ class SelectionContractTests(unittest.TestCase):
                 "selection_status": "selected",
             }
             handoff = FullInstructionHandoff(profile.id, profile.fingerprint, "full")
+            if profile.id == "phase3-unknown":
+                self.assertEqual(validate_selection(output, inventory=inventory, handoffs=(handoff,)), output)
+                continue
             with self.subTest(skill=profile.id), self.assertRaises(ValueError):
                 validate_selection(output, inventory=inventory, handoffs=(handoff,))
 

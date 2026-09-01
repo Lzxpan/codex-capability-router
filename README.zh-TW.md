@@ -7,11 +7,9 @@ Codex Capability Router v0.2.0-beta.1 是 local-first、context-first、read-onl
 Router，先由 Codex LLM TaskAnalysis 理解完整工作，再將方法型 Skill 與目前可直接
 呼叫的 Supporting Provider 分層處理。
 
-Phase 1–5 deterministic implementation 已完成：目前完整 suite 為 **137/137 PASS**，
-Codex Live Acceptance A–E 也通過。這是 pre-release；Live Acceptance 期間 Host 沒有
-提供 Router 可採信的 Skill availability declaration，App 仍為
-`INSUFFICIENT_RUNTIME_EVIDENCE`，Plugin 仍為 `NO_RUNTIME_SAMPLE`，Supporting Provider
-正式範圍仍有限。
+Deterministic implementation 與官方 Provider adapters 已完成：目前完整 suite 為
+**160/160 PASS**。本次 Host 沒有提供可連線的官方 App Server surface，因此
+App/MCP live acceptance 明確維持 blocked。
 
 ## v0.2.0-beta.1 新增內容
 
@@ -22,9 +20,9 @@ Codex Live Acceptance A–E 也通過。這是 pre-release；Live Acceptance 期
 - `prepare_route_context()` 是 read-only、stateless、deterministic、Skill-only；
   `execution_needs=[]` 時完全不掃描 Supporting Provider、不做 readiness normalization、
   不建立 digest。
-- `prepare_supporting_context()` 只接受通過 runtime evidence certification 的 exact
-  instance。目前 formal scope 僅為 MCP `node_repl` 與 builtin provider-equivalent
-  `functions.exec_command`。
+- `prepare_supporting_context()` 只接受 typed、通過 runtime evidence certification 的
+  exact instance。正式 selectable kind 為 App、MCP 與 builtin tool；Plugin 僅是
+  package/provenance container。
 - Provider 語意選擇由 Codex 決定；Python 只做 schema、identity、readiness、fingerprint、
   privacy 與 finalization validation。
 - 只有一條 production `route()` 能建立 v0.2 Receipt 並進入 `FINALIZED`；完成後不可
@@ -32,8 +30,9 @@ Codex Live Acceptance A–E 也通過。這是 pre-release；Live Acceptance 期
 - `explain-code` legacy frontmatter 採 bounded compatibility normalization，不放寬
   malformed、sensitive 或 unavailable gate。
 
-App、Plugin、未 certification 的 MCP instance 與 builtin tool 都不是 formal production
-scope；不會被猜測、推薦、自動安裝、自動授權或 silent fallback。
+未 certification 的 App/MCP instance 與 builtin tool 都不是 formal production
+scope。Plugin 不會被選為 Provider；只有可信 Host 暴露的 App 或 MCP 才能獨立
+參與選擇。不會猜測、推薦、自動安裝、自動授權或 silent fallback。
 
 ## 文件 / v0.2
 
@@ -167,14 +166,13 @@ absolute paths 或 private Plugin inventory。
 TaskAnalysis、Skill-side context fingerprint、recall-first retrieval、Codex Skill
 selection、lazy Supporting Provider context、bounded finalization、雙語 output 與 bounded
 validation。Canonical fixture 包含 12 個 scenarios：`zh-TW` 6 個、`en` 6 個；完整 suite
-包含 137 個 tests，Codex Live Acceptance 包含五個案例。
+包含 160 個 tests；官方 App/MCP live acceptance 取決於 Host surface。
 
-v0.2 Live Acceptance 期間 Host 沒有提供 Router 可採信的 Skill availability declaration。
-Formal Supporting Provider scope 僅限 certified instance `node_repl` 與
-`functions.exec_command`；App 為 `INSUFFICIENT_RUNTIME_EVIDENCE`，Plugin 為
-`NO_RUNTIME_SAMPLE`，其他 MCP/builtin provider 不會自動被信任。Detail expansion 已由
-deterministic tests 覆蓋，但五個 live case 沒有自然觸發；live destructive stale mutation
-刻意未執行。
+本次 upgrade 的 live probe 期間 Host 沒有提供可連線的官方 App Server surface，
+因此 App/MCP live acceptance 維持 Host-surface blocked。實作已依 Host 提供時的
+typed `app/list`、`app/installed`、`app/read` 與 `mcpServerStatus/list` contract
+建立 adapter；舊有 `node_repl` certification 仍保留作 compatibility。Detail
+expansion 已由 deterministic tests 覆蓋。
 
 Deferred features 包含 capability execution、安裝/管理、permission mutation、remote
 discovery、private inventory persistence、account integration、telemetry、GUI/service

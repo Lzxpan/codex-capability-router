@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" role="img" aria-labelledby="title desc">
+  <title id="title">Codex Capability Router mascot</title>
+  <desc id="desc">A friendly anthropomorphic cat and dog operate a capability routing hub.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F7F8F4"/><stop offset="1" stop-color="#E9F0FF"/></linearGradient>
+    <linearGradient id="hub" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#635BFF"/><stop offset="1" stop-color="#16B8A6"/></linearGradient>
+  </defs>
+  <rect width="640" height="640" rx="96" fill="url(#bg)"/>
+  <circle cx="320" cy="324" r="164" fill="#FFFFFF" stroke="#D9E2F2" stroke-width="10"/>
+  <circle cx="320" cy="324" r="112" fill="url(#hub)"/>
+  <circle cx="320" cy="324" r="72" fill="#172554" opacity=".28"/>
+  <path d="M276 334c26-54 72-54 96 0M292 366h56" fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="320" cy="286" r="12" fill="#FFFFFF"/>
+  <path d="M320 212v-22M320 458v-22M208 324h-22M454 324h-22" stroke="#16B8A6" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="320" cy="180" r="10" fill="#16B8A6"/><circle cx="320" cy="468" r="10" fill="#16B8A6"/>
+  <circle cx="178" cy="324" r="10" fill="#635BFF"/><circle cx="462" cy="324" r="10" fill="#635BFF"/>
+  <g stroke="#172554" stroke-width="8" stroke-linejoin="round">
+    <path d="M78 230l18-72 48 42c24-8 54-3 72 16 29 31 22 89-11 117-36 31-95 24-119-13-13-20-15-59-8-90z" fill="#F5B69A"/>
+    <path d="M88 192l10-34 27 30M129 199l15-28 22 32" fill="#F5B69A"/>
+    <circle cx="140" cy="250" r="7" fill="#172554" stroke="none"/><circle cx="178" cy="250" r="7" fill="#172554" stroke="none"/>
+    <path d="M145 275c11 9 22 9 33 0M158 256l4 10" fill="none" stroke-linecap="round"/>
+    <path d="M493 224l40-39 34 52c21 18 30 46 23 75-9 40-52 67-93 58-39-9-67-51-56-88 7-24 28-46 62-58z" fill="#E5A977"/>
+    <path d="M507 216l26-31 17 39M543 224l27-12 1 39" fill="#E5A977"/>
+    <circle cx="510" cy="269" r="7" fill="#172554" stroke="none"/><circle cx="548" cy="269" r="7" fill="#172554" stroke="none"/>
+    <path d="M517 294c12 8 23 8 34 0M533 275l3 10" fill="none" stroke-linecap="round"/>
+    <path d="M248 396c-6 44-3 80 20 98h102c24-18 27-54 20-98" fill="#F5B69A"/>
+    <path d="M392 396c6 44 3 80-20 98h-48" fill="#E5A977"/>
+  </g>
+  <path d="M66 112h142M432 112h142" stroke="#16B8A6" stroke-width="8" stroke-linecap="round"/>
+  <text x="320" y="84" text-anchor="middle" fill="#172554" font-size="28" font-weight="800" font-family="Segoe UI, Arial, sans-serif" letter-spacing="4">ROUTER</text>
+  <text x="320" y="582" text-anchor="middle" fill="#172554" font-size="25" font-weight="700" font-family="Segoe UI, Arial, sans-serif">Codex Capability Router</text>
+</svg>
