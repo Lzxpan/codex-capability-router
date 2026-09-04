@@ -10,7 +10,17 @@ from pathlib import Path
 import re
 import unicodedata
 
-from .discovery import _canonical_skill_id, _frontmatter, discover_skill_roots
+from .discovery import (
+    _canonical_skill_id,
+    _frontmatter,
+    _skill_candidates,
+    _skill_source_label,
+    discover_plugin_skill_declarations,
+    discover_plugin_skill_root_specs,
+    discover_skill_roots,
+)
+from .existence import ExistenceEvidence, ExistenceEvidenceState, MetadataQuality, classify_metadata_quality
+from .skill_plan import RootPlanSnapshot, SkillRootSpec, build_skill_root_plan
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -25,6 +35,10 @@ from .models import (
 from .registry import merge_capability_records
 from .routing import _is_controller
 
+# 修改紀錄（2026-09-02，Steve Peng）
+# 原始內容：正式 high-recall Skill pool 仍可能以 metadata gate 遺漏存在的 Skill。
+# 修改原因：beta.3 的 existence-only contract 禁止 metadata quality 造成 capability starvation。
+# 修改後功能：formal high-recall pool 保留所有 present 且 identity resolved 的 Skill；legacy retrieval 與 handoff 維持相容邊界。
 # 修改紀錄（2026-08-31，Steve Peng）
 # 原始內容：inventory 以 Host exposure evidence 作為 Skill availability gate，缺少 Host evidence 的 trusted-root Skill 會被降為 unknown。
 # 修改原因：Skill availability 與 Provider availability 分離；trusted root 的合法 discovery/handoff safety 才是 Skill formal availability 基礎。
@@ -33,7 +47,6 @@ from .routing import _is_controller
 
 # ponytail: cache 只保留記憶體中的 Basic Profile；若未來需要跨程序持久化，先補 privacy/eviction 規格再加入 storage。
 PROFILE_FORMAT_VERSION = "phase1-basic-profile-v1"
-_AVAILABLE_STATUSES = frozenset({CapabilityStatus.INSTALLED, CapabilityStatus.AVAILABLE})
 _CANONICAL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 DEFAULT_POSSIBLE_RELEVANCE_SERIALIZED_BUDGET_BYTES = 32768
 
@@ -51,6 +64,49 @@ class BasicProfile:
     provenance: tuple[str, ...]
     fingerprint: str
     stale: bool = False
+    metadata_quality: MetadataQuality = MetadataQuality.OPAQUE
+    source_binding: "SkillSourceBinding | None" = None
+
+
+@dataclass(frozen=True)
+class SkillSourceBinding:
+    """一個 canonical Skill 唯一採用的 authoritative physical source。"""
+
+    canonical_skill_id: str
+    path: Path
+    source: str
+    provenance: tuple[str, ...] = ()
+    source_kind: str = ""
+    root_kind: str = ""
+    scope: str = ""
+    plugin_identity: str | None = None
+    alternate_paths: tuple[Path, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "path", Path(self.path))
+        object.__setattr__(self, "provenance", tuple(self.provenance))
+        object.__setattr__(self, "alternate_paths", tuple(Path(path) for path in self.alternate_paths))
+        if not self.canonical_skill_id.strip() or not self.source.strip():
+            raise ValueError("SkillSourceBinding requires identity and source")
+
+
+@dataclass(frozen=True)
+class _SkillSourceMaterial:
+    skill_id: str
+    path: Path
+    raw: bytes
+    source: str
+    spec: SkillRootSpec
+
+
+@dataclass(frozen=True)
+class SelectedSkillRefreshResult:
+    """單一 selected Skill 的 bounded、immutable refresh 結果。"""
+
+    snapshot: "SkillInventorySnapshot"
+    skill_id: str
+    source_reads: int
+    semantic_digest_changed: bool
 
 
 @dataclass(frozen=True)
@@ -152,18 +208,168 @@ class ProfileCache:
 
 @dataclass(frozen=True)
 class SkillInventory:
-    """本次 refresh 的 Skill records、Basic Profiles 與可用 eligibility 結果。"""
+    """本次 refresh 的存在 inventory、Basic Profiles 與 handoff eligibility 結果。"""
 
     records: tuple[CapabilityRecord, ...] = ()
     profiles: tuple[BasicProfile, ...] = ()
     available_records: tuple[CapabilityRecord, ...] = ()
     diagnostics: tuple[DiscoveryDiagnostic, ...] = ()
     partial: bool = False
-    _skill_paths: dict[str, Path] = field(default_factory=dict, repr=False, compare=False)
+    _skill_bindings: dict[str, SkillSourceBinding] = field(default_factory=dict, repr=False, compare=False)
     host_exposed_skill_ids: tuple[str, ...] = ()
     router_available_skill_ids: tuple[str, ...] = ()
     # 新增欄位置於既有欄位之後，保留既有 positional compatibility。
     trusted_root_skill_ids: tuple[str, ...] = ()
+    # present 是 existence scope；available 僅保留 legacy handoff-ready scope。
+    present_records: tuple[CapabilityRecord, ...] = ()
+    existence_evidence: tuple[ExistenceEvidence, ...] = ()
+    raw_evidence_count: int = 0
+    physical_declaration_count: int = 0
+    filesystem_present_count: int = 0
+    runtime_entity_count: int = 0
+    package_declared_count: int = 0
+    canonical_unique_count: int = 0
+    controller_self_count: int = 0
+    metadata_sufficient_count: int = 0
+    metadata_sparse_count: int = 0
+    metadata_opaque_count: int = 0
+    identity_unresolved_count: int = 0
+    semantically_considered_count: int = 0
+    never_considered_count: int = 0
+    discovery_metrics: tuple[tuple[str, int], ...] = ()
+
+    @property
+    def _skill_paths(self) -> dict[str, Path]:
+        """Compatibility projection derived solely from selected source bindings."""
+
+        return {skill_id: binding.path for skill_id, binding in self._skill_bindings.items()}
+
+    def source_binding(self, skill_id: str) -> SkillSourceBinding | None:
+        """回傳 profile 與 handoff 共用的唯一 physical source binding。"""
+
+        return self._skill_bindings.get(skill_id)
+
+    @property
+    def skill_raw_evidence_count(self) -> int:
+        """回傳 source evidence rows；不把它誤稱為 canonical Skill 數。"""
+
+        return self.raw_evidence_count
+
+    @property
+    def skill_canonical_unique_count(self) -> int:
+        """回傳 canonical logical Skill 數。"""
+
+        return self.canonical_unique_count
+
+    def blind_metrics(self) -> dict[str, int]:
+        """輸出不含 UI expected count 的 Skill source-derived metrics。"""
+
+        return {
+            "skill_raw_evidence_count": self.raw_evidence_count,
+            "skill_physical_declaration_count": self.physical_declaration_count,
+            "skill_filesystem_present_count": self.filesystem_present_count,
+            "skill_runtime_entity_count": self.runtime_entity_count,
+            "skill_package_declared_count": self.package_declared_count,
+            "skill_canonical_unique_count": self.canonical_unique_count,
+            "skill_controller_self_count": self.controller_self_count,
+            "skill_metadata_sufficient_count": self.metadata_sufficient_count,
+            "skill_metadata_sparse_count": self.metadata_sparse_count,
+            "skill_metadata_opaque_count": self.metadata_opaque_count,
+            "skill_identity_unresolved_count": self.identity_unresolved_count,
+            "skill_semantically_considered_count": self.semantically_considered_count,
+            "skill_never_considered_count": self.never_considered_count,
+        }
+
+
+@dataclass(frozen=True)
+class SkillInventorySnapshot:
+    """一次 root-plan refresh 的 immutable Skill inventory cache snapshot。"""
+
+    inventory: SkillInventory
+    root_plan_fingerprint: str
+    inventory_fingerprint: str
+    source_fingerprint: str
+    discovery_metrics: tuple[tuple[str, int], ...] = ()
+
+    def __post_init__(self) -> None:
+        """驗證 snapshot digest，確保 route 不會把不同 plan 當成同一份 cache。"""
+
+        if not isinstance(self.inventory, SkillInventory):
+            raise TypeError("SkillInventorySnapshot requires SkillInventory")
+        for name, value in (
+            ("root_plan_fingerprint", self.root_plan_fingerprint),
+            ("inventory_fingerprint", self.inventory_fingerprint),
+            ("source_fingerprint", self.source_fingerprint),
+        ):
+            if not isinstance(value, str) or len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+                raise ValueError(f"{name} must be a SHA-256 digest")
+        object.__setattr__(self, "discovery_metrics", tuple(self.discovery_metrics))
+
+    @property
+    def skill_never_considered_count(self) -> int:
+        """提供 zero-miss audit 的唯讀 projection。"""
+
+        return self.inventory.never_considered_count
+
+
+@dataclass
+class SkillInventoryCache:
+    """caller-owned session cache；不跨 session persistent，也不保存完整 SKILL.md。"""
+
+    snapshot: SkillInventorySnapshot | None = None
+    root_plan_build_count: int = 0
+    skill_inventory_refresh_count: int = 0
+    filesystem_root_visit_count: int = 0
+    plugin_manifest_open_count: int = 0
+    skill_file_open_count: int = 0
+    cached_inventory_reuse_count: int = 0
+
+    def get_or_refresh(
+        self,
+        root_plan: RootPlanSnapshot,
+        *,
+        source_fingerprint: str = "",
+        refresh: bool = False,
+        runtime: DiscoveryResult | None = None,
+        cli: DiscoveryResult | None = None,
+        manual: DiscoveryResult | None = None,
+        host_exposure: HostSkillExposureEnvelope | None = None,
+        plugin_manifests: Sequence[Mapping[str, object]] = (),
+    ) -> SkillInventorySnapshot:
+        """同一 plan/source state 重用 snapshot；明確 source change 才 refresh。"""
+
+        if not isinstance(root_plan, RootPlanSnapshot):
+            raise TypeError("SkillInventoryCache requires RootPlanSnapshot")
+        source_digest = _source_fingerprint(source_fingerprint, runtime, cli, manual, host_exposure, plugin_manifests)
+        if (
+            not refresh
+            and self.snapshot is not None
+            and self.snapshot.root_plan_fingerprint == root_plan.fingerprint
+            and self.snapshot.source_fingerprint == source_digest
+        ):
+            self.cached_inventory_reuse_count += 1
+            return self.snapshot
+        self.root_plan_build_count += 1
+        self.skill_inventory_refresh_count += 1
+        snapshot = refresh_skill_inventory_snapshot(
+            root_plan,
+            runtime=runtime,
+            cli=cli,
+            manual=manual,
+            host_exposure=host_exposure,
+            plugin_manifests=plugin_manifests,
+            source_fingerprint=source_digest,
+        )
+        self.snapshot = snapshot
+        metrics = dict(snapshot.discovery_metrics)
+        self.filesystem_root_visit_count += metrics.get("filesystem_root_count", 0)
+        self.skill_file_open_count += metrics.get("skill_files_opened", 0)
+        return snapshot
+
+    def invalidate(self) -> None:
+        """由明確 reload/source event 清除當前 session snapshot。"""
+
+        self.snapshot = None
 
 
 def refresh_skill_inventory(
@@ -174,6 +380,8 @@ def refresh_skill_inventory(
     cli: DiscoveryResult | None = None,
     manual: DiscoveryResult | None = None,
     host_exposure: HostSkillExposureEnvelope | None = None,
+    plugin_manifests: Sequence[Mapping[str, object]] = (),
+    root_plan: RootPlanSnapshot | None = None,
 ) -> SkillInventory:
     """重新 discovery/merge 明確 roots，並以本次來源更新 Skill Profile cache。
 
@@ -182,8 +390,47 @@ def refresh_skill_inventory(
     """
 
     active_cache = cache or ProfileCache()
-    root_result = discover_skill_roots(roots)
-    source_results = tuple(result for result in (runtime, cli, root_result, manual) if result is not None)
+    if root_plan is not None:
+        if not isinstance(root_plan, RootPlanSnapshot):
+            raise TypeError("root_plan must be a RootPlanSnapshot")
+        # beta.7 path：root plan 已在 init/refresh 完成 Plugin container compression；
+        # 這裡只做一次 plan-defined bounded traversal，不重新展開 child roots。
+        root_result = discover_skill_roots(root_plan)
+        plugin_roots: tuple[Path, ...] = ()
+        plugin_root_result = DiscoveryResult()
+    else:
+        # beta.7 compatibility path 仍接受既有 explicit roots，但 production
+        # inventory 也改用一個 Plugin container root，不把 child directory 擴成 roots。
+        root_specs = tuple(
+            SkillRootSpec(
+                root,
+                "CALLER_DECLARED_SKILL_ROOT",
+                "TRUSTED_RUNTIME_DECLARED_ROOT",
+                provenance=("caller",),
+            )
+            for root in roots
+        )
+        plugin_specs = discover_plugin_skill_root_specs(plugin_manifests)
+        plan = build_skill_root_plan(
+            include_fixed_global=False,
+            additional_roots=root_specs,
+            plugin_roots=plugin_specs,
+        )
+        root_result = discover_skill_roots(plan)
+        plugin_roots: tuple[Path, ...] = ()
+        plugin_root_result = DiscoveryResult()
+    plugin_declared_result = discover_plugin_skill_declarations(plugin_manifests)
+    source_results = tuple(
+        result
+        for result in (runtime, cli, root_result, plugin_root_result, plugin_declared_result, manual)
+        if result is not None
+    )
+    raw_skill_records = tuple(
+        record
+        for result in source_results
+        for record in result.records
+        if record.kind == CapabilityKind.SKILL
+    )
     merged = merge_capability_records(
         tuple(record for result in source_results for record in result.records)
     )
@@ -194,9 +441,40 @@ def refresh_skill_inventory(
         )
     )
     local_records: dict[str, CapabilityRecord] = {}
-    for local_record in root_result.records:
+    for local_record in (*root_result.records, *plugin_root_result.records):
         local_records.setdefault(local_record.id, local_record)
-    skill_contents, skill_paths = _read_allowlisted_skill_contents(roots)
+    if root_plan is not None:
+        source_materials = _read_allowlisted_skill_sources_for_plan(root_plan)
+    else:
+        source_materials = (
+            _read_allowlisted_skill_sources_for_specs(
+                tuple(
+                    SkillRootSpec(
+                        root,
+                        "CALLER_DECLARED_SKILL_ROOT",
+                        "TRUSTED_RUNTIME_DECLARED_ROOT",
+                        provenance=("caller",),
+                    )
+                    for root in roots
+                ),
+                source_prefix="skill-root",
+            )
+            + _read_allowlisted_skill_sources_for_specs(plugin_specs, source_prefix="plugin-skill-root")
+        )
+    source_bindings = _select_source_bindings(records, source_materials)
+    source_diagnostics = tuple(
+        DiscoveryDiagnostic(
+            "multiple_physical_skill_sources",
+            "canonical Skill has multiple authoritative physical sources; one binding selected",
+            record.source,
+        )
+        for record in records
+        if len({str(material.path.resolve()).casefold() for material in source_materials if material.skill_id == record.id}) > 1
+    )
+    material_by_path = {
+        str(material.path.resolve()).casefold(): material
+        for material in source_materials
+    }
     host_exposed_ids: tuple[str, ...] = ()
     if host_exposure is not None:
         from .host_exposure import HostSkillExposureEnvelope
@@ -209,15 +487,15 @@ def refresh_skill_inventory(
     # trusted-root formal availability；避免檔案在 discovery/read 之間消失時
     # 先被誤報為 available，並把真正的 handoff safety 留給 selection validator。
     trusted_root_ids = frozenset(local_records)
-    handoff_ready_ids = trusted_root_ids.intersection(skill_paths)
-    records = tuple(
-        replace(record, status=CapabilityStatus.AVAILABLE)
-        if record.id in trusted_root_ids and record.status == CapabilityStatus.UNKNOWN
-        else record
-        for record in records
-    )
+    handoff_ready_ids = trusted_root_ids.intersection(source_bindings)
     profiles = tuple(
-        _refresh_profile(active_cache, record, skill_contents, local_records.get(record.id))
+        _refresh_profile(
+            active_cache,
+            record,
+            source_bindings.get(record.id),
+            local_records.get(record.id),
+            material_by_path,
+        )
         for record in records
     )
     current_ids = {profile.id for profile in profiles}
@@ -230,25 +508,321 @@ def refresh_skill_inventory(
         record
         for record in records
         if record.id in handoff_ready_ids
-        and record.status in _AVAILABLE_STATUSES
         and not _is_controller(record)
         and not record.routing_support
     )
+    present_records = tuple(record for record in records if not record.routing_support)
+    profiles_by_id = {profile.id: profile for profile in profiles}
+    existence_evidence = _skill_existence_evidence(
+        raw_skill_records,
+        profiles_by_id,
+    )
+    evidence_by_state: dict[ExistenceEvidenceState, set[str]] = {
+        state: set() for state in ExistenceEvidenceState
+    }
+    for evidence in existence_evidence:
+        evidence_by_state[evidence.state].add(evidence.identity)
+    present_by_id = {record.id: record for record in present_records}
+    present_profiles = tuple(
+        profile
+        for profile in profiles
+        if profile.id in present_by_id and not _is_controller_record(present_by_id[profile.id])
+    )
+    metadata_sufficient_count = sum(profile.metadata_quality == MetadataQuality.SUFFICIENT for profile in present_profiles)
+    metadata_sparse_count = sum(profile.metadata_quality == MetadataQuality.SPARSE for profile in present_profiles)
+    metadata_opaque_count = sum(profile.metadata_quality == MetadataQuality.OPAQUE for profile in present_profiles)
+    identity_unresolved_count = sum(not bool(profile.id.strip()) for profile in present_profiles)
     diagnostics = tuple(
         diagnostic
         for result in source_results
         for diagnostic in result.diagnostics
-    ) + merged.diagnostics
+    ) + merged.diagnostics + source_diagnostics
     return SkillInventory(
         records=records,
         profiles=profiles,
         available_records=available_records,
         diagnostics=diagnostics,
         partial=any(result.partial for result in source_results),
-        _skill_paths=skill_paths,
+        _skill_bindings=source_bindings,
         trusted_root_skill_ids=tuple(sorted(trusted_root_ids, key=lambda value: (value.casefold(), value))),
         host_exposed_skill_ids=host_exposed_ids,
         router_available_skill_ids=tuple(record.id for record in available_records),
+        present_records=present_records,
+        existence_evidence=existence_evidence,
+        raw_evidence_count=len(existence_evidence),
+        physical_declaration_count=len(evidence_by_state[ExistenceEvidenceState.FILESYSTEM_PRESENT]),
+        filesystem_present_count=len(evidence_by_state[ExistenceEvidenceState.FILESYSTEM_PRESENT]),
+        runtime_entity_count=len(evidence_by_state[ExistenceEvidenceState.RUNTIME_ENTITY_PRESENT]),
+        package_declared_count=len(evidence_by_state[ExistenceEvidenceState.PACKAGE_DECLARED_PRESENT]),
+        canonical_unique_count=len(records),
+        controller_self_count=sum(_is_controller_record(record) for record in records),
+        metadata_sufficient_count=metadata_sufficient_count,
+        metadata_sparse_count=metadata_sparse_count,
+        metadata_opaque_count=metadata_opaque_count,
+        identity_unresolved_count=identity_unresolved_count,
+        semantically_considered_count=len(present_profiles),
+        never_considered_count=0,
+        discovery_metrics=_sum_discovery_metrics(root_result, plugin_root_result),
+    )
+
+
+def refresh_skill_inventory_snapshot(
+    root_plan: RootPlanSnapshot,
+    *,
+    runtime: DiscoveryResult | None = None,
+    cli: DiscoveryResult | None = None,
+    manual: DiscoveryResult | None = None,
+    host_exposure: HostSkillExposureEnvelope | None = None,
+    plugin_manifests: Sequence[Mapping[str, object]] = (),
+    source_fingerprint: str = "",
+) -> SkillInventorySnapshot:
+    """在 init/refresh 建立 immutable snapshot；ordinary route 應直接重用它。"""
+
+    if not isinstance(root_plan, RootPlanSnapshot):
+        raise TypeError("root_plan must be a RootPlanSnapshot")
+    inventory = refresh_skill_inventory(
+        (),
+        cache=ProfileCache(),
+        runtime=runtime,
+        cli=cli,
+        manual=manual,
+        host_exposure=host_exposure,
+        plugin_manifests=plugin_manifests,
+        root_plan=root_plan,
+    )
+    digest = _source_fingerprint(source_fingerprint, runtime, cli, manual, host_exposure, plugin_manifests)
+    return SkillInventorySnapshot(
+        inventory=inventory,
+        root_plan_fingerprint=root_plan.fingerprint,
+        inventory_fingerprint=_inventory_fingerprint(inventory),
+        source_fingerprint=digest,
+        discovery_metrics=inventory.discovery_metrics,
+    )
+
+
+def refresh_selected_skill_snapshot(
+    snapshot: SkillInventorySnapshot,
+    skill_id: str,
+) -> SelectedSkillRefreshResult:
+    """只重讀已綁定的 selected Skill，建立新的 immutable snapshot。
+
+    這是 handoff mismatch 的 bounded recovery；不重建 RootPlan、不開 Plugin
+    manifest，也不觸碰任何未選定 Skill。來源消失時只嘗試 snapshot 已保留的
+    alternate authoritative paths，絕不搜尋新路徑。
+    """
+
+    if not isinstance(snapshot, SkillInventorySnapshot):
+        raise TypeError("snapshot must be a SkillInventorySnapshot")
+    inventory = snapshot.inventory
+    profile = next((item for item in inventory.profiles if item.id == skill_id), None)
+    binding = inventory.source_binding(skill_id)
+    if profile is None or binding is None:
+        raise ValueError("selected Skill has no authoritative source binding")
+    selected_path = None
+    raw = None
+    for path in (binding.path, *binding.alternate_paths):
+        try:
+            candidate = path.read_bytes()
+            candidate.decode("utf-8")
+        except (OSError, UnicodeError):
+            continue
+        selected_path = path
+        raw = candidate
+        break
+    if selected_path is None or raw is None:
+        raise ValueError("selected Skill instructions are unavailable")
+    refreshed_binding = replace(
+        binding,
+        path=selected_path,
+        alternate_paths=tuple(path for path in (binding.path, *binding.alternate_paths) if path != selected_path),
+    )
+    refreshed_profile = replace(
+        profile,
+        fingerprint=_fingerprint_fields(
+            profile.id,
+            profile.name,
+            profile.description,
+            profile.version,
+            raw,
+        ),
+        stale=False,
+        source_binding=refreshed_binding,
+    )
+    profiles = tuple(refreshed_profile if item.id == skill_id else item for item in inventory.profiles)
+    bindings = dict(inventory._skill_bindings)
+    bindings[skill_id] = refreshed_binding
+    refreshed_inventory = replace(inventory, profiles=profiles, _skill_bindings=bindings)
+    refreshed_snapshot = replace(
+        snapshot,
+        inventory=refreshed_inventory,
+        inventory_fingerprint=_inventory_fingerprint(refreshed_inventory),
+        discovery_metrics=refreshed_inventory.discovery_metrics,
+    )
+    public_before = _profile_public_digest(profile)
+    public_after = _profile_public_digest(refreshed_profile)
+    return SelectedSkillRefreshResult(
+        refreshed_snapshot,
+        skill_id,
+        1,
+        public_before != public_after,
+    )
+
+
+def _profile_public_digest(profile: BasicProfile) -> tuple[object, ...]:
+    """只比較可能影響 semantic selection 的 public profile fields。"""
+
+    return (
+        profile.id,
+        profile.name,
+        profile.description,
+        profile.version,
+        profile.status.value,
+        profile.source,
+        profile.provenance,
+        profile.metadata_quality.value,
+    )
+
+
+def _sum_discovery_metrics(*results: DiscoveryResult) -> tuple[tuple[str, int], ...]:
+    """合併 root discovery counters，避免 Plugin/root metrics 互相覆蓋。"""
+
+    totals: dict[str, int] = {}
+    for result in results:
+        for key, value in result.discovery_metrics:
+            totals[key] = totals.get(key, 0) + value
+    return tuple(sorted(totals.items()))
+
+
+def _inventory_fingerprint(inventory: SkillInventory) -> str:
+    """只以 canonical public records/profiles 計算 inventory fingerprint。"""
+
+    payload = {
+        "records": [record.to_mapping() for record in inventory.records],
+        "profiles": [
+            {
+                "id": profile.id,
+                "name": profile.name,
+                "description": profile.description,
+                "version": profile.version,
+                "status": profile.status.value,
+                "source": profile.source,
+                "provenance": list(profile.provenance),
+                "fingerprint": profile.fingerprint,
+                "metadata_quality": profile.metadata_quality.value,
+            }
+            for profile in inventory.profiles
+        ],
+        "metrics": inventory.blind_metrics(),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _source_fingerprint(
+    requested: str,
+    runtime: DiscoveryResult | None,
+    cli: DiscoveryResult | None,
+    manual: DiscoveryResult | None,
+    host_exposure: HostSkillExposureEnvelope | None,
+    plugin_manifests: Sequence[Mapping[str, object]],
+) -> str:
+    """計算 source state digest；不把 task text 或完整 Skill body 放入 cache key。"""
+
+    if requested:
+        if len(requested) == 64 and all(char in "0123456789abcdef" for char in requested):
+            return requested
+        return hashlib.sha256(requested.encode("utf-8")).hexdigest()
+    payload: dict[str, object] = {
+        "runtime": None if runtime is None else runtime.to_registry_json(),
+        "cli": None if cli is None else cli.to_registry_json(),
+        "manual": None if manual is None else manual.to_registry_json(),
+        "host_exposure": None if host_exposure is None else host_exposure.to_mapping(),
+        "plugin_manifests": [dict(manifest) for manifest in plugin_manifests],
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _is_controller_record(record: CapabilityRecord) -> bool:
+    """共用 Router self/controller boundary，避免 source metric 重複猜測。"""
+
+    return _is_controller(record)
+
+
+def _skill_existence_evidence(
+    raw_records: Sequence[CapabilityRecord],
+    profiles_by_id: Mapping[str, BasicProfile],
+) -> tuple[ExistenceEvidence, ...]:
+    """將 raw Skill records 轉成 typed source evidence，不做 semantic dedupe。"""
+
+    evidence: list[ExistenceEvidence] = []
+    for record in raw_records:
+        metadata_sufficient = bool(
+            (profile := profiles_by_id.get(record.id))
+            and profile.name.strip()
+            and profile.description
+            and profile.description.strip()
+        )
+        source = record.source
+        if source.startswith("plugin-skill-root:"):
+            evidence.extend(
+                (
+                    ExistenceEvidence(
+                        record.id,
+                        ExistenceEvidenceState.PACKAGE_DECLARED_PRESENT,
+                        source,
+                        metadata_sufficient,
+                    ),
+                    ExistenceEvidence(
+                        record.id,
+                        ExistenceEvidenceState.FILESYSTEM_PRESENT,
+                        source,
+                        metadata_sufficient,
+                    ),
+                )
+            )
+        elif source.startswith("skill-root:"):
+            evidence.append(
+                ExistenceEvidence(
+                    record.id,
+                    ExistenceEvidenceState.FILESYSTEM_PRESENT,
+                    source,
+                    metadata_sufficient,
+                )
+            )
+        elif source.startswith("plugin-declared:"):
+            evidence.append(
+                ExistenceEvidence(
+                    record.id,
+                    ExistenceEvidenceState.PACKAGE_DECLARED_PRESENT,
+                    source,
+                    metadata_sufficient,
+                )
+            )
+        elif source.startswith(("runtime:", "cli:")):
+            evidence.append(
+                ExistenceEvidence(
+                    record.id,
+                    ExistenceEvidenceState.RUNTIME_ENTITY_PRESENT,
+                    source,
+                    metadata_sufficient,
+                )
+            )
+        else:
+            evidence.append(
+                ExistenceEvidence(
+                    record.id,
+                    ExistenceEvidenceState.DECLARATION_ONLY,
+                    source,
+                    metadata_sufficient,
+                    resolved=False,
+                )
+            )
+    return tuple(
+        sorted(
+            evidence,
+            key=lambda item: (item.identity.casefold(), item.identity, item.state.value, item.source),
+        )
     )
 
 
@@ -312,12 +886,17 @@ def retrieve_candidates(
     current_budget = budget or RetrievalBudget()
     if use_expanded:
         current_budget = current_budget.consume_expanded()
-    available_ids = {record.id for record in inventory.available_records}
+    # Semantic recall sees every present logical Skill; handoff-ready paths are
+    # checked later by the full-instruction boundary.
+    present_records = inventory.present_records or inventory.available_records
+    available_ids = {record.id for record in present_records if not _is_controller(record) and not record.routing_support}
     profiles = tuple(profile for profile in inventory.profiles if profile.id in available_ids)
     # 只有目前未進入 formal available inventory 的 recalled profile 才能進 diagnostic；
     # trusted-root valid Skill 已在 refresh 時升格為 available，不會因 Host 缺失而誤入這裡。
     unknown_profiles = tuple(
-        profile for profile in inventory.profiles if profile.status == CapabilityStatus.UNKNOWN
+        profile
+        for profile in inventory.profiles
+        if profile.status == CapabilityStatus.UNKNOWN and profile.id not in available_ids
     )
     profiles_by_id = {profile.id.casefold(): profile for profile in profiles}
     all_profiles_by_id = {profile.id.casefold(): profile for profile in inventory.profiles}
@@ -576,17 +1155,16 @@ def _require_explicit_id(value: object) -> None:
 def _refresh_profile(
     cache: ProfileCache,
     record: CapabilityRecord,
-    skill_contents: dict[tuple[str, str], bytes],
+    binding: SkillSourceBinding | None,
     local_record: CapabilityRecord | None,
+    material_by_path: Mapping[str, _SkillSourceMaterial] | None = None,
 ) -> BasicProfile:
     """用目前 record 與明確 root 的 SKILL.md 更新單一 Basic Profile。"""
 
-    content = skill_contents.get((record.source, record.id))
-    if content is None:
-        content = next(
-            (value for (source, capability_id), value in skill_contents.items() if capability_id == record.id),
-            b"",
-        )
+    material = None if binding is None or material_by_path is None else material_by_path.get(
+        str(binding.path.resolve()).casefold()
+    )
+    content = b"" if material is None else material.raw
     profile_record = record
     if local_record is not None:
         profile_record = replace(
@@ -607,9 +1185,78 @@ def _refresh_profile(
         source=profile_record.source,
         provenance=profile_record.provenance,
         fingerprint=fingerprint,
+        metadata_quality=classify_metadata_quality(
+            name=profile_record.name,
+            description=profile_record.description,
+        ),
+        source_binding=binding,
     )
     cache._active[record.id] = profile
     return profile
+
+
+def _select_source_bindings(
+    records: Sequence[CapabilityRecord],
+    materials: Sequence[_SkillSourceMaterial],
+) -> dict[str, SkillSourceBinding]:
+    """依 merged record 的既有 authority winner 建立唯一 source binding。
+
+    `record.source` 是 registry 已驗證的 authority decision；path 僅作同一
+    source 下的 deterministic tie-breaker，不另建 filesystem precedence。
+    """
+
+    grouped: dict[str, list[_SkillSourceMaterial]] = {}
+    for material in materials:
+        grouped.setdefault(material.skill_id, []).append(material)
+    bindings: dict[str, SkillSourceBinding] = {}
+    for record in records:
+        raw_candidates = tuple(grouped.get(record.id, ()))
+        candidates = _unique_source_materials(raw_candidates)
+        if not candidates:
+            continue
+        selected = [material for material in raw_candidates if material.source == record.source]
+        if not selected:
+            selected = candidates
+        selected_material = min(selected, key=_source_material_sort_key)
+        alternate_paths = tuple(
+            material.path
+            for material in sorted(candidates, key=_source_material_sort_key)
+            if material.path != selected_material.path
+        )
+        bindings[record.id] = SkillSourceBinding(
+            canonical_skill_id=record.id,
+            path=selected_material.path,
+            source=selected_material.source,
+            provenance=record.provenance,
+            source_kind=selected_material.spec.source_kind,
+            root_kind=selected_material.spec.root_kind,
+            scope=selected_material.spec.scope,
+            plugin_identity=selected_material.spec.plugin_identity,
+            alternate_paths=alternate_paths,
+        )
+    return bindings
+
+
+def _unique_source_materials(materials: Sequence[_SkillSourceMaterial]) -> tuple[_SkillSourceMaterial, ...]:
+    """同一 canonical ID 的 exact physical duplicate 只保留一份。"""
+
+    unique: dict[str, _SkillSourceMaterial] = {}
+    for material in materials:
+        key = str(material.path.resolve()).casefold()
+        unique.setdefault(key, material)
+    return tuple(unique.values())
+
+
+def _source_material_sort_key(material: _SkillSourceMaterial) -> tuple[object, ...]:
+    """同 authority source 的 deterministic tie-break，不以目錄遍歷順序決定。"""
+
+    return (
+        material.source.casefold(),
+        material.spec.root_kind,
+        material.spec.scope,
+        material.spec.plugin_identity or "",
+        str(material.path.resolve()).casefold(),
+    )
 
 
 def _fingerprint(record: CapabilityRecord, skill_md: bytes) -> str:
@@ -654,13 +1301,15 @@ def _fingerprint_fields(
 
 def _read_allowlisted_skill_contents(
     roots: Sequence[Path],
+    *,
+    source_prefix: str = "skill-root",
 ) -> tuple[dict[tuple[str, str], bytes], dict[str, Path]]:
     """只讀取 caller 明確 roots 的直接 Skill entries，回傳 bytes 與 deterministic path。"""
 
     result: dict[tuple[str, str], bytes] = {}
     paths: dict[str, Path] = {}
     for root_index, root in enumerate(roots):
-        source = f"skill-root:{root_index}"
+        source = f"{source_prefix}:{root_index}"
         try:
             candidates = (
                 [root]
@@ -675,12 +1324,125 @@ def _read_allowlisted_skill_contents(
                 continue
             try:
                 raw = skill_file.read_bytes()
-                metadata = _frontmatter(raw.decode("utf-8"))
+                text = raw.decode("utf-8")
+                metadata = _frontmatter(text)
             except (OSError, UnicodeError):
                 continue
-            if metadata is None:
+            # beta.5：存在性與 metadata 品質分離。SKILL.md 可讀且目錄 basename
+            # 是 stable identity 時，malformed frontmatter 仍保留 handoff bytes；
+            # 完整 handoff validation 仍在後續階段執行。
+            capability_id = _canonical_skill_id(metadata, candidate) if metadata is not None else candidate.name
+            if not isinstance(capability_id, str) or _CANONICAL_ID.fullmatch(capability_id) is None:
+                capability_id = candidate.name
+            if isinstance(capability_id, str) and _CANONICAL_ID.fullmatch(capability_id):
+                result.setdefault((source, capability_id), raw)
+                paths.setdefault(capability_id, skill_file)
+    return result, paths
+
+
+def _read_allowlisted_skill_sources_for_plan(
+    plan: RootPlanSnapshot,
+) -> tuple[_SkillSourceMaterial, ...]:
+    """依 frozen plan 讀取 bounded source material，保留每個實體來源。"""
+
+    return _read_allowlisted_skill_sources_for_specs(plan.roots, source_prefix="skill-root")
+
+
+def _read_allowlisted_skill_sources_for_specs(
+    specs: Sequence[SkillRootSpec],
+    *,
+    source_prefix: str,
+) -> tuple[_SkillSourceMaterial, ...]:
+    """讀取明確 root specs 的 exact SKILL.md，不做 package-wide search。"""
+
+    materials: list[_SkillSourceMaterial] = []
+    for root_index, spec in enumerate(specs):
+        try:
+            candidates = _skill_candidates(spec)
+        except OSError:
+            continue
+        for candidate in candidates:
+            source = _skill_source_label(spec, source_prefix, root_index, candidate)
+            skill_file = candidate / "SKILL.md"
+            if candidate.is_symlink() or not candidate.is_dir() or not skill_file.is_file() or skill_file.is_symlink():
                 continue
-            capability_id = _canonical_skill_id(metadata, candidate)
+            try:
+                raw = skill_file.read_bytes()
+                text = raw.decode("utf-8")
+                metadata = _frontmatter(text)
+            except (OSError, UnicodeError):
+                continue
+            capability_id = _canonical_skill_id(metadata, candidate) if metadata is not None else candidate.name
+            if not isinstance(capability_id, str) or _CANONICAL_ID.fullmatch(capability_id) is None:
+                capability_id = candidate.name
+            if isinstance(capability_id, str) and _CANONICAL_ID.fullmatch(capability_id):
+                materials.append(_SkillSourceMaterial(capability_id, skill_file, raw, source, spec))
+    return tuple(materials)
+
+
+def _read_allowlisted_skill_contents_for_plan(
+    plan: RootPlanSnapshot,
+) -> tuple[dict[tuple[str, str], bytes], dict[str, Path]]:
+    """依 immutable root plan 讀取 bounded handoff bytes，不重新建立或壓縮 roots。"""
+
+    result: dict[tuple[str, str], bytes] = {}
+    paths: dict[str, Path] = {}
+    for root_index, spec in enumerate(plan.roots):
+        try:
+            candidates = _skill_candidates(spec)
+        except OSError:
+            continue
+        for candidate in candidates:
+            source = _skill_source_label(spec, "skill-root", root_index, candidate)
+            skill_file = candidate / "SKILL.md"
+            if candidate.is_symlink() or not candidate.is_dir() or not skill_file.is_file() or skill_file.is_symlink():
+                continue
+            try:
+                raw = skill_file.read_bytes()
+                text = raw.decode("utf-8")
+                metadata = _frontmatter(text)
+            except (OSError, UnicodeError):
+                continue
+            capability_id = _canonical_skill_id(metadata, candidate) if metadata is not None else candidate.name
+            if not isinstance(capability_id, str) or _CANONICAL_ID.fullmatch(capability_id) is None:
+                capability_id = candidate.name
+            if isinstance(capability_id, str) and _CANONICAL_ID.fullmatch(capability_id):
+                result.setdefault((source, capability_id), raw)
+                paths.setdefault(capability_id, skill_file)
+    return result, paths
+
+
+def _read_allowlisted_skill_contents_for_specs(
+    specs: Sequence[SkillRootSpec],
+) -> tuple[dict[tuple[str, str], bytes], dict[str, Path]]:
+    """依 manifest 宣告的 Plugin Skill roots 讀取一層 bounded handoff bytes。
+
+    這個相容路徑保留 declaration 順序，避免既有 explicit caller roots 的
+    first-root precedence 被 RootPlan 的 canonical path 排序改變；它不會展開
+    Plugin package，也不會把 child Skill directory 重新建立成 root。
+    """
+
+    result: dict[tuple[str, str], bytes] = {}
+    paths: dict[str, Path] = {}
+    for root_index, spec in enumerate(specs):
+        try:
+            candidates = _skill_candidates(spec)
+        except OSError:
+            continue
+        for candidate in candidates:
+            source = _skill_source_label(spec, "plugin-skill-root", root_index, candidate)
+            skill_file = candidate / "SKILL.md"
+            if candidate.is_symlink() or not candidate.is_dir() or not skill_file.is_file() or skill_file.is_symlink():
+                continue
+            try:
+                raw = skill_file.read_bytes()
+                text = raw.decode("utf-8")
+                metadata = _frontmatter(text)
+            except (OSError, UnicodeError):
+                continue
+            capability_id = _canonical_skill_id(metadata, candidate) if metadata is not None else candidate.name
+            if not isinstance(capability_id, str) or _CANONICAL_ID.fullmatch(capability_id) is None:
+                capability_id = candidate.name
             if isinstance(capability_id, str) and _CANONICAL_ID.fullmatch(capability_id):
                 result.setdefault((source, capability_id), raw)
                 paths.setdefault(capability_id, skill_file)

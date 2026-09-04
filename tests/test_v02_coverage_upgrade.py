@@ -82,7 +82,7 @@ class HostExposureRouteTests(unittest.TestCase):
             self.assertEqual(inventory.host_exposed_skill_ids, ())
             self.assertEqual(inventory.trusted_root_skill_ids, ("host-visible",))
             self.assertEqual(inventory.router_available_skill_ids, ("host-visible",))
-            self.assertEqual(inventory.available_records[0].status, CapabilityStatus.AVAILABLE)
+            self.assertEqual(inventory.available_records[0].status, CapabilityStatus.UNKNOWN)
 
             unknown_host = _host_envelope(root, path, enabled=False)
             observed_inventory = refresh_skill_inventory((root,), host_exposure=unknown_host)
@@ -484,9 +484,12 @@ class CoverageContractTests(unittest.TestCase):
                 )
             )
             self.assertEqual(receipt["selected_skills"][0]["id"], "available-skill")
-            self.assertEqual(receipt["possible_relevance_diagnostics"][0]["id"], "unknown-skill")
-            self.assertEqual(receipt["possible_relevance_diagnostics"][0]["availability_state"], "unknown")
-            self.assertEqual(receipt["skill_metrics"]["possibly_relevant_unavailable_count"], 1)
+            # 修改紀錄（2026-09-02，Steve Peng）
+            # 原始內容：runtime unknown Skill 會被移到 possible-relevance diagnostic。
+            # 修改原因：beta.2 以存在證據建立 semantic candidate；readiness/unknown 只留給 execution evidence。
+            # 修改後功能：unknown 但具 identity/metadata 的 Skill 保留在 candidate pool，不再被 diagnostic-only gate 排除。
+            self.assertEqual(receipt["possible_relevance_diagnostics"], [])
+            self.assertEqual(receipt["skill_metrics"]["possibly_relevant_unavailable_count"], 0)
 
 
 if __name__ == "__main__":

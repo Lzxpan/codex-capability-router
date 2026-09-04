@@ -130,8 +130,8 @@ class Phase2DiscoveryTests(unittest.TestCase):
             self.assertEqual(normalized[0]["description"], record.description)
             self.assertNotIn(str(root), result.to_registry_json())
 
-    def test_truly_malformed_frontmatter_remains_diagnostic(self) -> None:
-        """未縮排的 block scalar 後續內容不得被猜測成 metadata。"""
+    def test_truly_malformed_frontmatter_is_retained_as_opaque(self) -> None:
+        """未縮排的 block scalar 不被猜測，但 stable directory identity 仍保留。"""
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -149,12 +149,12 @@ class Phase2DiscoveryTests(unittest.TestCase):
 
             result = discover_skill_roots([root])
 
-            self.assertEqual(result.records, ())
+            self.assertEqual([record.id for record in result.records], ["malformed"])
             self.assertEqual([diagnostic.code for diagnostic in result.diagnostics], ["malformed_skill"])
             self.assertNotIn(str(root), result.diagnostics[0].message)
 
     def test_malformed_skill_md_handled_safely(self) -> None:
-        """格式錯誤的 SKILL.md 只產生診斷，不中斷其他 discovery。"""
+        """格式錯誤的 SKILL.md 保留 opaque identity 且不中斷其他 discovery。"""
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -164,7 +164,7 @@ class Phase2DiscoveryTests(unittest.TestCase):
 
             result = discover_skill_roots([root])
 
-            self.assertEqual(result.records, ())
+            self.assertEqual([record.id for record in result.records], ["broken"])
             self.assertEqual([diagnostic.code for diagnostic in result.diagnostics], ["malformed_skill"])
 
     def test_unreadable_entry_handled_safely(self) -> None:

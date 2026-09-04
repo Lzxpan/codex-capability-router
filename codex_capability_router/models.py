@@ -140,7 +140,10 @@ class RouterInput:
 
 @dataclass(frozen=True)
 class RejectedCandidate:
-    """被 availability、self-routing、overlap 或 selection limit 排除的候選。"""
+    """Deprecated compatibility record for legacy catalog exclusions only。
+
+    v0.2 ``route()`` 不因 semantic overlap 或 selection count 排除 Skill。
+    """
 
     id: str
     reason: str
@@ -159,7 +162,11 @@ class RejectedCandidate:
 
 @dataclass(frozen=True)
 class RecommendationResult:
-    """Deprecated compatibility result；不代表 Phase 4 production selection output。"""
+    """Deprecated compatibility result；不代表 v0.2 production selection output。
+
+    ``selected_primary``/``selected_optional`` limits belong only to this legacy
+    presentation shape and are not v0.2 semantic selection limits.
+    """
 
     selected_primary: tuple["CapabilityRecord", ...]
     selected_optional: tuple["CapabilityRecord", ...]
@@ -178,7 +185,7 @@ class RecommendationResult:
     router_controller_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        """在資料邊界再次保護 hard selection limits，避免呼叫端傳出超額結果。"""
+        """只保護 legacy presentation shape；不限制 v0.2 ``route()`` selection。"""
 
         if len(self.selected_primary) > 3:
             raise ValueError("selected_primary cannot contain more than 3 capabilities")
@@ -308,6 +315,14 @@ class DiscoveryResult:
     records: tuple[CapabilityRecord, ...] = ()
     diagnostics: tuple[DiscoveryDiagnostic, ...] = ()
     partial: bool = False
+    # 僅記錄 source-derived discovery 成本；不接受 UI expected count。
+    discovery_metrics: tuple[tuple[str, int], ...] = ()
+
+    @property
+    def metrics(self) -> dict[str, int]:
+        """回傳 deterministic discovery metrics 的讀取副本。"""
+
+        return dict(self.discovery_metrics)
 
     def to_registry_json(self) -> str:
         """輸出固定 key、固定 record ordering 的 registry JSON。"""

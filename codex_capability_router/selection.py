@@ -11,10 +11,14 @@ from .inventory import (
     BasicProfile,
     EnrichedProfile,
     RetrievalBudget,
+    SelectedSkillRefreshResult,
     SkillInventory,
+    SkillInventorySnapshot,
     fingerprint_profile_content,
+    refresh_selected_skill_snapshot,
     retrieve_candidates,
 )
+from .inventory_sweep import InventorySweep, build_inventory_sweep, skill_digest
 from .models import CapabilityKind, CapabilityRecord, CapabilityStatus
 from .routing import _is_controller
 from .task_analysis import TaskAnalysis
@@ -32,10 +36,17 @@ from .task_analysis import TaskAnalysis
 # 原始內容：SelectionState 只有次數上限，route 完成後仍可被當成可變的 OPEN state 使用。
 # 修改原因：Integration Hardening 要求 Final Selection 後不可 correction、expanded retrieval 或變更 selected Skill。
 # 修改後功能：加入 OPEN/FINALIZED lifecycle 與 finalized selected IDs；封存後所有 selection transition 及不同 final payload 都會被拒絕。
+# 修改紀錄（2026-09-02，Steve Peng）
+# 原始內容：metadata 不足的 resolved Skill 不會進正式 semantic candidate pool。
+# 修改原因：beta.3 將 metadata 降為品質欄位；存在且 identity resolved 即必須被考量。
+# 修改後功能：正式 selection pool 保留所有 present、非 controller self、非 routing-support Skill；完整 handoff validation 維持不變。
+# 修改紀錄（2026-09-01，Steve Peng）
+# 原始內容：正式 route 仍以 bounded relevance retrieval 決定 Skill semantic candidate pool。
+# 修改原因：高召回原則要求所有 available、metadata-sufficient Skill 至少被 LLM consideration 一次，避免 top-k/tail starvation。
+# 修改後功能：新增 high-recall full digest sweep；既有 retrieval API 保留 compatibility，Python 不做 semantic filtering。
 
 SELECTION_STATUSES = frozenset({"selected", "no_matching_skill"})
 SELECTION_LIFECYCLES = frozenset({"OPEN", "FINALIZED"})
-_AVAILABLE_STATUSES = frozenset({CapabilityStatus.INSTALLED, CapabilityStatus.AVAILABLE})
 _FINGERPRINT = re.compile(r"^[0-9a-f]{64}$")
 _CANONICAL_SKILL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 _SUPPORT_SECTIONS = frozenset({"work_items", "deliverables", "constraints", "quality_expectations"})
@@ -165,6 +176,9 @@ class SelectionPreparation:
     state: SelectionState
     # 新增欄位置於既有 fields 之後，避免破壞直接建立 preparation 的舊呼叫。
     unknown_profiles: tuple[BasicProfile, ...] = ()
+    # 高召回正式 route 使用完整 digest sweep；舊 retrieval API 保持相容。
+    inventory_sweep: InventorySweep | None = None
+    high_recall: bool = False
 
 
 def prepare_selection(
@@ -177,8 +191,26 @@ def prepare_selection(
     budget: RetrievalBudget | None = None,
     use_expanded: bool = False,
     task_analysis_items: Sequence[str] = (),
+    high_recall: bool = False,
 ) -> SelectionPreparation:
-    """準備新版 contract 的候選資料；不執行 Codex，也不做語意 final selection。"""
+    """準備新版 contract 的候選資料；不執行 Codex，也不做語意 final selection。
+
+    `high_recall=True` 只供正式 v0.2 route 使用：它以完整 present inventory
+    建立 deterministic digest batches，不再用 relevance shortlist 決定哪些能力
+    有資格被 LLM 看見。既有預設值保留 Phase 2 retrieval compatibility。
+    """
+
+    if high_recall:
+        return prepare_high_recall_selection(
+            inventory,
+            task_summary,
+            work_parts=work_parts,
+            explicit_skill_ids=explicit_skill_ids,
+            known_enriched_profiles=known_enriched_profiles,
+            budget=budget,
+            use_expanded=use_expanded,
+            task_analysis_items=task_analysis_items,
+        )
 
     result = retrieve_candidates(
         inventory,
@@ -202,6 +234,77 @@ def prepare_selection(
     )
 
 
+def prepare_high_recall_selection(
+    inventory: SkillInventory,
+    task_summary: str,
+    *,
+    work_parts: Sequence[str] = (),
+    explicit_skill_ids: Sequence[str] = (),
+    known_enriched_profiles: Sequence[EnrichedProfile] = (),
+    budget: RetrievalBudget | None = None,
+    use_expanded: bool = False,
+    task_analysis_items: Sequence[str] = (),
+) -> SelectionPreparation:
+    """建立完整 Skill semantic consideration pool，避免 top-k/tail starvation。
+
+    Python 只做輸入格式、trusted availability、canonical ordering 與 bounded
+    batching；Codex 主模型負責 plausible task relevance，且 semantic overlap
+    不會由 Python 轉成 exclusion。Python 不做 semantic ranking 或 pruning。
+    """
+
+    _require_selection_text(task_summary, "task_summary")
+    for value in (*work_parts, *task_analysis_items):
+        _require_selection_text(value, "selection work item")
+    for value in explicit_skill_ids:
+        _require_skill_id(value)
+    for profile in known_enriched_profiles:
+        if not isinstance(profile, EnrichedProfile):
+            raise TypeError("known_enriched_profiles must contain EnrichedProfile values")
+
+    current_budget = budget or RetrievalBudget()
+    if use_expanded:
+        current_budget = current_budget.consume_expanded()
+    # present scope is the semantic universe; available_records remains the
+    # legacy full-instruction handoff scope and may be a smaller subset.
+    present_records = inventory.present_records or inventory.available_records
+    available_ids = {record.id for record in present_records if _eligible_record(record)}
+    candidates = tuple(
+        sorted(
+            (
+                profile
+                for profile in inventory.profiles
+                if profile.id in available_ids
+            ),
+            key=lambda profile: (profile.id.casefold(), profile.id),
+        )
+    )
+    sweep = build_inventory_sweep(
+        tuple(skill_digest(profile) for profile in candidates),
+        identity_field="id",
+    )
+    return SelectionPreparation(
+        task_summary=task_summary,
+        candidates=candidates,
+        unknown_profiles=tuple(
+            sorted(
+                (
+                    profile
+                    for profile in inventory.profiles
+                    if profile.status == CapabilityStatus.UNKNOWN and profile.id not in available_ids
+                ),
+                key=lambda profile: (profile.id.casefold(), profile.id),
+            )
+        ),
+        enriched_profiles=tuple(known_enriched_profiles),
+        state=SelectionState(
+            budget=current_budget,
+            retrieval_rounds=1 + current_budget.expanded_retrievals_used,
+        ),
+        inventory_sweep=sweep,
+        high_recall=True,
+    )
+
+
 def expanded_retrieve(
     inventory: SkillInventory,
     preparation: SelectionPreparation,
@@ -214,6 +317,8 @@ def expanded_retrieve(
     """在既有準備資料上最多擴大一次候選，並沿用同一 route state。"""
 
     next_state = preparation.state.consume_expanded_retrieval()
+    if preparation.high_recall:
+        return replace(preparation, state=next_state)
     result = retrieve_candidates(
         inventory,
         preparation.task_summary,
@@ -233,6 +338,19 @@ def expanded_retrieve(
         enriched_profiles=result.enriched_profiles,
         state=next_state,
     )
+
+
+def _require_selection_text(value: object, field: str) -> None:
+    """驗證 bounded public text，不從文字推導 capability 語意。"""
+
+    if not isinstance(value, str) or not value.strip() or len(value) > 4096:
+        raise ValueError(f"{field} must be bounded text")
+
+
+def _skill_metadata_sufficient(profile: BasicProfile) -> bool:
+    """確認 Skill 名片足以交給 LLM，不判斷它是否適用 task。"""
+
+    return bool(profile.name.strip() and profile.description and profile.description.strip())
 
 
 def preliminary_select(
@@ -260,7 +378,8 @@ def handoff_full_instructions(
     handoffs: list[FullInstructionHandoff] = []
     for skill_id in preliminary.skill_ids:
         profile = profiles.get(skill_id)
-        skill_path = inventory._skill_paths.get(skill_id)
+        binding = inventory.source_binding(skill_id) if profile is not None else None
+        skill_path = None if binding is None else binding.path
         if profile is None or skill_id not in eligible or skill_path is None:
             raise ValueError("preliminary Skill is not currently handoff-eligible")
         try:
@@ -269,9 +388,48 @@ def handoff_full_instructions(
         except (OSError, UnicodeError) as error:
             raise ValueError("selected Skill instructions are unavailable") from error
         if fingerprint_profile_content(profile, raw_instructions) != profile.fingerprint:
-            raise ValueError("selected Skill changed before full instruction handoff")
+            raise SkillHandoffFingerprintMismatch("selected Skill changed before full instruction handoff")
         handoffs.append(FullInstructionHandoff(skill_id, profile.fingerprint, instructions))
     return tuple(handoffs)
+
+
+class SkillHandoffFingerprintMismatch(ValueError):
+    """表示 selected Skill 的 authoritative bytes 與 snapshot 不一致。"""
+
+
+@dataclass(frozen=True)
+class HandoffRecoveryResult:
+    """一次 selected-Skill freshness recovery 的 bounded result。"""
+
+    snapshot: SkillInventorySnapshot
+    handoffs: tuple[FullInstructionHandoff, ...]
+    refresh: SelectedSkillRefreshResult
+
+
+def handoff_with_selected_skill_refresh(
+    snapshot: SkillInventorySnapshot,
+    preliminary: PreliminarySelection,
+) -> HandoffRecoveryResult:
+    """fingerprint mismatch 時只 refresh selected Skill，最多 retry 一次。"""
+
+    try:
+        handoffs = handoff_full_instructions(snapshot.inventory, preliminary)
+        return HandoffRecoveryResult(
+            snapshot,
+            handoffs,
+            SelectedSkillRefreshResult(snapshot, "", 0, False),
+        )
+    except SkillHandoffFingerprintMismatch:
+        if not preliminary.skill_ids:
+            raise
+        refreshed = refresh_selected_skill_snapshot(snapshot, preliminary.skill_ids[0])
+        if refreshed.semantic_digest_changed:
+            raise ValueError("SELECTION_REVALIDATION_REQUIRED")
+        try:
+            handoffs = handoff_full_instructions(refreshed.snapshot.inventory, preliminary)
+        except SkillHandoffFingerprintMismatch as error:
+            raise ValueError("HANDOFF_REJECTION_AFTER_ONE_REFRESH") from error
+        return HandoffRecoveryResult(refreshed.snapshot, handoffs, refreshed)
 
 
 def apply_correction(
@@ -334,7 +492,8 @@ def validate_selection(
             raise ValueError("selected Skill requires current full instruction handoff")
         if handoff.fingerprint != profile.fingerprint:
             raise ValueError("full instruction handoff fingerprint is stale")
-        skill_path = inventory._skill_paths.get(skill_id)
+        binding = inventory.source_binding(skill_id)
+        skill_path = None if binding is None else binding.path
         if skill_path is None:
             raise ValueError("selected Skill instructions are unavailable")
         try:
@@ -407,7 +566,7 @@ def validate_coverage_additions(
     selected_ids: Sequence[str] = (),
     task_analysis: TaskAnalysis | None = None,
 ) -> tuple[CoverageAddition, ...]:
-    """驗證一次 Coverage Check additions；不判斷 `distinct_value` 語意真假。"""
+    """驗證一次 Coverage Check additions；rationale 欄位不是 uniqueness gate。"""
 
     if isinstance(payload, Mapping):
         if set(payload) != {"additions"}:
@@ -501,11 +660,15 @@ def _require_skill_id(skill_id: object) -> None:
 
 
 def _eligible_record(record: CapabilityRecord) -> bool:
-    """套用既有 availability、kind、controller 與 routing-support hard gates。"""
+    """套用存在性、kind、controller 與 routing-support hard gates。
+
+    Skill readiness status 只保留在 BasicProfile 作為診斷；只要 trusted root
+    已讀到實體 `SKILL.md`，inventory 就會把它放入 present pool。這裡不再以
+    installed/available/unavailable/disabled/unknown 做 semantic exclusion。
+    """
 
     return (
         record.kind == CapabilityKind.SKILL
-        and record.status in _AVAILABLE_STATUSES
         and not _is_controller(record)
         and not record.routing_support
     )

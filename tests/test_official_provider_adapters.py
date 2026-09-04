@@ -124,7 +124,7 @@ def _mcp_response(*, runtime_status="connected", auth_status="unsupported", incl
 class OfficialProviderAdapterTests(unittest.TestCase):
     """確認官方 readiness surface 與 Provider-level selection boundary。"""
 
-    def test_app_hard_gate_requires_all_three_surfaces(self) -> None:
+    def test_app_hard_gate_is_diagnostic_and_presence_is_selectable(self) -> None:
         positive = adapt_official_app_inventory(*_app_responses())
         self.assertEqual(positive.discovered_count, 1)
         self.assertEqual(positive.hard_eligible_count, 1)
@@ -152,10 +152,15 @@ class OfficialProviderAdapterTests(unittest.TestCase):
                     provider_declarations=result.provider_declarations,
                     readiness_evidence=result.readiness_evidence,
                 )
-                self.assertEqual(context.provider_digests, ())
                 if kwargs.get("tool_enabled", True) is False or kwargs.get("missing_read", False):
-                    self.assertEqual(context.metrics.metadata_insufficient_count, 1)
+                    self.assertEqual(len(context.provider_digests), 1)
+                    self.assertEqual(context.provider_digests[0].readiness_state, "PRESENT_UNVERIFIED")
+                    self.assertEqual(context.metrics.metadata_insufficient_count, 0)
                     self.assertEqual(context.metrics.explicit_negative_count, 0)
+                else:
+                    self.assertEqual(len(context.provider_digests), 1)
+                    self.assertEqual(context.provider_digests[0].readiness_state, "KNOWN_UNAVAILABLE")
+                    self.assertEqual(context.metrics.explicit_negative_count, 1)
 
         unverified = adapt_official_app_inventory(*_app_responses(missing_installed=True))
         self.assertEqual(unverified.hard_eligible_count, 0)
@@ -172,7 +177,7 @@ class OfficialProviderAdapterTests(unittest.TestCase):
         inaccessible_without_runtime = adapt_official_app_inventory(
             *_app_responses(accessible=False, missing_installed=True)
         )
-        self.assertEqual(inaccessible_without_runtime.selectable_count, 0)
+        self.assertEqual(inaccessible_without_runtime.selectable_count, 1)
         self.assertEqual(inaccessible_without_runtime.explicit_negative_count, 1)
 
     def test_fresh_request_specs_use_official_force_flags_and_detail(self) -> None:
@@ -183,11 +188,14 @@ class OfficialProviderAdapterTests(unittest.TestCase):
         self.assertEqual(requests[2]["params"], {"appIds": ["calendar_app"], "includeTools": True, "threadId": "thread"})
         self.assertEqual(requests[3]["params"], {"detail": "toolsAndAuthOnly", "threadId": "thread"})
 
-    def test_mcp_official_gate_requires_connected_auth_and_usable_tool(self) -> None:
+    def test_mcp_readiness_is_diagnostic_and_server_presence_is_selectable(self) -> None:
         result = adapt_official_mcp_inventory(_mcp_response())
         self.assertEqual(result.detail, MCP_STATUS_DETAIL)
         self.assertEqual(result.discovered_count, 1)
         self.assertEqual(result.hard_eligible_count, 1)
+        self.assertEqual(result.blind_metrics()["runtime_entity_count"], 1)
+        self.assertEqual(result.blind_metrics()["package_declared_count"], 0)
+        self.assertEqual(result.provider_declarations[0].existence_evidence_state.value, "RUNTIME_ENTITY_PRESENT")
         context = prepare_supporting_context(
             (ExecutionNeed("read a value", "需要安全 read-only runtime capability"),),
             provider_declarations=result.provider_declarations,
@@ -213,10 +221,13 @@ class OfficialProviderAdapterTests(unittest.TestCase):
                 if kwargs.get("auth_status") == "notLoggedIn":
                     self.assertEqual(invalid_context.metrics.present_unverified_count, 1)
                     self.assertEqual(invalid_context.provider_digests[0].readiness_state, "PRESENT_UNVERIFIED")
+                elif kwargs.get("include_tool", True) is False:
+                    self.assertEqual(len(invalid_context.provider_digests), 1)
+                    self.assertEqual(invalid_context.provider_digests[0].readiness_state, "PRESENT_UNVERIFIED")
+                    self.assertEqual(invalid_context.metrics.metadata_insufficient_count, 0)
                 else:
-                    self.assertEqual(invalid_context.provider_digests, ())
-                    if kwargs.get("include_tool", True) is False:
-                        self.assertEqual(invalid_context.metrics.metadata_insufficient_count, 1)
+                    self.assertEqual(len(invalid_context.provider_digests), 1)
+                    self.assertEqual(invalid_context.provider_digests[0].readiness_state, "KNOWN_UNAVAILABLE")
 
     def test_plugin_is_never_new_formal_selection(self) -> None:
         app = adapt_official_app_inventory(*_app_responses())

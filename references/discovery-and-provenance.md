@@ -19,6 +19,21 @@
 
 缺少可靠 status 時使用 `unknown`；不得從名稱、目錄或命令輸出推測 `installed`。`confidence` 僅接受 `0.0..1.0`。
 
+## Host Capability Snapshot Bridge
+
+Codex controller 可將本 session 已暴露的 public capability metadata，以
+`HostCapabilitySnapshot` 傳入 Router。只有 controller-owned envelope 經
+`trusted_host_snapshot` marker 正規化後才能進 production route；Python 不宣稱
+這是 cryptographic origin proof，也不接受一般 user mapping 作為等價輸入。
+
+Snapshot 只保存 namespace、action、display name、description、exposure state、
+明確 hierarchy、parent identity、provenance 與可選 side-effect/read-only/callable
+hint。`host_native` 才能成為 `builtin_tool`；`app_child` / `mcp_child` 併入對應
+formal Provider；`unknown` 轉成保留 `hierarchy_state=UNKNOWN` 的 `host_tool`
+fallback，Plugin package 不會成為 formal Provider。Snapshot Provider 接著進入
+既有完整 deterministic semantic sweep；metadata quality 與 readiness 不作
+consideration gate，也不自動執行。
+
 ## 核准 CLI probes
 
 只允許：

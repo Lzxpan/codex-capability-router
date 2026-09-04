@@ -94,10 +94,10 @@ class FoundationStructureTests(unittest.TestCase):
     def test_readmes_are_bilingual_and_phase_one_scoped(self) -> None:
         """英文與繁中 README 必須存在並聲明 Phase 1 的安全邊界。"""
 
-        english = _read_utf8("README.md")
-        traditional_chinese = _read_utf8("README.zh-TW.md")
+        traditional_chinese = _read_utf8("README.md")
+        english = _read_utf8("README.en.md")
         for content in (english, traditional_chinese):
-            self.assertIn("0.2.0-beta.1", content)
+            self.assertIn("0.2.0-beta.9", content)
             self.assertIn("0.1.0", content)
             self.assertIn("read-only", content.lower())
             self.assertIn("network", content.lower())
@@ -115,11 +115,11 @@ class FoundationStructureTests(unittest.TestCase):
 
         metadata = _read_utf8("pyproject.toml")
         self.assertIn('name = "codex-capability-router"', metadata)
-        # 修改紀錄（2026-08-26，Steve Peng）
-        # 原始內容：測試固定期待 beta.4 package metadata。
-        # 修改原因：v0.2.0-beta.1 release preparation 更新版本 metadata 後，regression test 必須驗證同一版本。
-        # 修改後功能：測試確認 pyproject 使用 v0.2.0-beta.1，且不改變 runtime dependency 邊界。
-        self.assertIn('version = "0.2.0-beta.1"', metadata)
+        # 修改紀錄（2026-09-02，Steve Peng）
+        # 原始內容：測試固定期待 v0.2.0-beta.1 package metadata。
+        # 修改原因：beta.5 development version 必須與 package metadata 同步。
+        # 修改後功能：測試確認 pyproject 使用 v0.2.0-beta.8，且不改變 runtime dependency 邊界。
+        self.assertIn('version = "0.2.0-beta.9"', metadata)
         self.assertIn("dependencies = []", metadata)
 
     def test_package_exports_version_without_execution(self) -> None:
@@ -140,7 +140,7 @@ class FoundationStructureTests(unittest.TestCase):
         # 修改後功能：測試確認 package 匯出 v0.2.0-beta.1，且不改變 no-execution 邊界。
 
         package = importlib.import_module("codex_capability_router")
-        self.assertEqual(package.__version__, "0.2.0-beta.1")
+        self.assertEqual(package.__version__, "0.2.0-beta.9")
         allowed_submodules = {
             "models",
             "validation",
@@ -162,6 +162,19 @@ class FoundationStructureTests(unittest.TestCase):
             # 修改原因：foundation export boundary 必須辨識 readiness/digest context，但不允許 Provider execution 或第二 route 偷渡。
             # 修改後功能：接受 supporting_context module binding，維持 package no-execution 邊界。
             "supporting_context",
+            # 修改紀錄（2026-09-01，Steve Peng）：Host capability snapshot bridge 新增獨立 typed module/export。
+            # 修改原因：foundation allowlist 必須辨識 controller-owned session snapshot，維持 no-execution 邊界。
+            # 修改後功能：允許 HostCapabilitySnapshot public contract 與 adapter，拒絕未驗證 mapping 進 production route。
+            "host_snapshot",
+            # 修改紀錄（2026-09-02，Steve Peng）：新增 blind existence evidence typed module。
+            # 修改原因：source scope 必須與 runtime/readiness metrics 分離。
+            # 修改後功能：允許 existence module binding，維持 package no-execution 邊界。
+            "existence",
+            "reconciliation",
+            # 修改紀錄（2026-09-01，Steve Peng）：High-recall inventory sweep 與 generic Provider discovery 新增 public module/export。
+            # 修改原因：foundation allowlist 必須辨識 deterministic batching、Host-native 與 Plugin child discovery，維持 no-execution 邊界。
+            # 修改後功能：允許 high-recall public contracts，不放寬 capability execution。
+            "inventory_sweep",
             # 修改紀錄（2026-08-31，Steve Peng）：package allowlist 原本未辨識 Host exposure module。
             # 修改原因：新增 typed Host availability boundary 後，foundation test 必須允許該獨立 module binding。
             # 修改後功能：只接受 host_exposure module，維持 package no-execution export boundary。
@@ -195,6 +208,10 @@ class FoundationStructureTests(unittest.TestCase):
             # 修改原因：正式 route contract 與 synthetic tests 需要使用同一組 schema foundation。
             # 修改後功能：公開 decision/detail/final selection validators，不新增 execution 或第二 route。
             "SupportingCapabilitySelection",
+            # 修改紀錄（2026-09-01，Steve Peng）：bounded Supporting Coverage Check 新增 typed addition export。
+            # 修改原因：foundation allowlist 必須同步正式 route schema，避免誤放寬其他 package export。
+            # 修改後功能：允許 coverage addition 與 validator，維持 immutable receipt boundary。
+            "SupportingCoverageAddition",
             "UnmetExecutionNeed",
             "SupportingFinalSelection",
             "SupportingDetailRequest",
@@ -215,6 +232,7 @@ class FoundationStructureTests(unittest.TestCase):
             "normalize_execution_needs",
             "validate_supporting_decision",
             "validate_supporting_final_selection_payload",
+            "validate_supporting_coverage_additions",
             "supporting_selection_status",
             "APP_LIST_METHOD",
             "APP_INSTALLED_METHOD",
@@ -224,7 +242,64 @@ class FoundationStructureTests(unittest.TestCase):
             "ProviderAdapterInventory",
             "adapt_official_app_inventory",
             "adapt_official_mcp_inventory",
+            "adapt_codex_mcp_cli_inventory",
             "build_official_provider_requests",
+            "prepare_high_recall_selection",
+            "HostCapability",
+            "HostCapabilitySnapshot",
+            "prepare_host_capability_snapshot",
+            "prepare_route_input_from_controller_registry",
+            "HOST_SNAPSHOT_CONTRACT_VERSION",
+            "HOST_SNAPSHOT_PROVENANCE",
+            "HOST_SNAPSHOT_TRUST_MARKER",
+            "ExistenceEvidence",
+            "ExistenceEvidenceState",
+            "MetadataQuality",
+            "classify_metadata_quality",
+            "canonicalize_external_identity",
+            "DISCOVERY_EVIDENCE_STATES",
+            "HOST_NATIVE_REGISTRY_SOURCE",
+            "ProviderDiscoveryInventory",
+            "discover_active_plugin_children",
+            "discover_host_capability_snapshot_inventory",
+            "discover_host_native_provider_inventory",
+            "discover_provider_inventory",
+            "DEFAULT_SWEEP_BYTE_LIMIT",
+            "DEFAULT_SWEEP_ITEM_LIMIT",
+            "InventorySweep",
+            "build_inventory_sweep",
+            "CurrentUiInventoryReference",
+            "CurrentUiInventoryReconciliation",
+            "UiInventoryCategory",
+            "discover_plugin_skill_roots",
+            "discover_plugin_skill_root_specs",
+            "discover_plugin_skill_declarations",
+            "DiscoveryRootPlan",
+            # beta.7 fixed root-plan/cache exports。
+            "skill_plan",
+            "SkillRootSpec",
+            "RootPlanSnapshot",
+            "build_skill_root_plan",
+            "KNOWN_SYSTEM_CHILD",
+            "ROOT_KIND_FIXED_GLOBAL",
+            "ROOT_KIND_FIXED_PROJECT",
+            "ROOT_KIND_RUNTIME_EXTRA",
+            "ROOT_KIND_PLUGIN_DECLARED",
+            "SkillInventorySnapshot",
+            "SkillInventoryCache",
+            "SkillSourceBinding",
+            "SelectedSkillRefreshResult",
+            "refresh_selected_skill_snapshot",
+            "refresh_skill_inventory_snapshot",
+            "reconcile_current_ui_inventory",
+            "plugin_store",
+            "PLUGIN_MANIFEST_RELATIVE_PATH",
+            "PLUGIN_STORE_RELATIVE_ROOT",
+            "PluginIdentity",
+            "PluginRootResolution",
+            "PluginStoreInventory",
+            "PluginStoreMetrics",
+            "resolve_plugin_store_inventory",
         }
         self.assertEqual(
             set(package.__dict__)

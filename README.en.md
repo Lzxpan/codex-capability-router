@@ -1,254 +1,376 @@
 # Codex Capability Router
 
-Current version: <code>0.2.0-beta.1</code>
-
-Compatibility baseline: <code>0.1.0</code>; Phase 1 remains read-only, performs no network discovery, and does not expose a private capability inventory.
-
 [繁體中文](README.md) | English
 
-![Codex Capability Router hero](docs/assets/readme/router-hero.svg)
+![Codex Capability Router hero](docs/assets/readme-v2/router-hero.png)
 
-> Let Codex understand the work first, then find the Skills and Supporting Providers the task actually needs.
+> Help Codex understand the whole task first, then find the Skills and Supporting Providers that genuinely help.
 
-![Codex Capability Router mascot](docs/assets/readme/router-mascot.svg)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
+[![Release: 0.2.0-beta.9](https://img.shields.io/badge/release-0.2.0--beta.9-f59e0b)](pyproject.toml)
 
-Codex Capability Router is a **local-first, context-first, read-only** capability router. It is not another execution Agent and does not execute capabilities on Codex's behalf. It turns a complete request into an auditable TaskAnalysis, lets Codex judge method Skills and currently callable Supporting Providers, and produces a Receipt that execution failures cannot silently rewrite.
+Codex Capability Router is a local-first, context-first, read-only capability router. It turns a natural-language task into an auditable <code>TaskAnalysis</code>, discovers trusted Skills, observes the Supporting Providers exposed by the current session, and uses the formal <code>route(SelectionRouteInput(...))</code> entry point to produce a <code>FINALIZED</code> Receipt that execution failures cannot silently rewrite.
 
-## What it does
+Current version: <code>0.2.0-beta.9</code>. Compatibility baseline: <code>0.1.0</code>; Phase 1 remains <code>read-only</code>, performs no network discovery, and does not emit a private capability inventory.
 
-The Router has one focused job:
+Beta9 also fixes Skill source binding and handoff freshness: one canonical Skill may retain multiple authoritative provenance sources, but each logical routing decision selects one deterministic physical source. The profile, fingerprint, and handoff all bind to that same source. If a selected Skill changes between snapshot and handoff, the Router performs one targeted refresh, creates a new immutable snapshot, and retries once; a second mismatch returns <code>HANDOFF_REJECTION</code>, while a changed selection-visible semantic digest returns <code>SELECTION_REVALIDATION_REQUIRED</code> to the Host controller.
+
+![Codex Capability Router mascot](docs/assets/readme-v2/router-mascot.png)
+
+## Why Capability Router?
+
+A compound task may need documentation, code checks, visual production, a workflow diagram, and repository validation at the same time. An older flow often looked like this:
 
 ~~~text
-Task understanding
-→ Capability discovery
-→ Skill selection
-→ Supporting Provider selection
-→ auditable Receipt
+discovered → top-k shortlist → selected
 ~~~
 
-Python handles schema, canonical identity, readiness, fingerprints, privacy, and lifecycle validation only. Codex makes the semantic decisions; the Router does not use keyword-to-ID mapping or hide a second semantic selector in Python.
+That can give a useful tail capability no chance to reach semantic consideration. The current Router uses:
+
+~~~text
+trusted discovery inventory
+        ↓
+deterministic bounded semantic sweep
+        ↓
+every resolved present capability gets at least one consideration
+        ↓
+any plausibly task-relevant capability enters selection
+~~~
+
+The key invariants are:
+
+- <code>skill_never_considered_total = 0</code>
+- <code>provider_never_considered_total = 0</code>
+
+These are design goals for reducing discovery and consideration misses, not a claim that every future capability can never be missed. On the trusted, formally discoverable inventory, the Router preserves auditable evidence for discovery, consideration, selection, and constraints.
+
+The four principles are:
+
+**DISCOVER BROADLY**: collect the trusted inventory before narrowing it.
+**CONSIDER BROADLY**: give every resolved present capability a semantic consideration opportunity.
+**SELECT GENEROUSLY**: keep any capability with plausible task-relevant value instead of excluding it because it overlaps another Skill or another tool already covers the work.
+**EXECUTE CAREFULLY**: routing is a recommendation and handoff boundary, not automatic execution, installation, login, or authorization.
 
 ## Core capabilities
 
-| Area | Current support |
+| Capability | What it does |
 | --- | --- |
-| Task and Skills | <code>TaskAnalysis</code>, trusted-root Skill discovery, coverage-first selection, at most one bounded Coverage Check, material and non-redundant selection, and full Skill handoff |
-| Supporting Providers | lazy <code>Execution Needs</code>, formal <code>App</code>, <code>MCP</code>, and <code>builtin_tool</code> kinds, <code>PRESENT_UNVERIFIED</code> optimistic selection, explicit-negative exclusion, and a capability metadata gate |
-| Audit and safety | immutable <code>FINALIZED</code> Receipt, <code>ExecutionAttempt</code> audit, Plugin package and provenance boundary, privacy validation, content fingerprints, and deterministic validation |
+| <code>TaskAnalysis</code> | Breaks the request into work items, material deliverables, constraints, and quality expectations. |
+| Skill routing | Discovers Skills from trusted roots, runs a full-inventory semantic sweep, and selects method-oriented capabilities. |
+| Supporting Provider routing | Uses <code>HostCapabilitySnapshot</code> to identify formal App, MCP, <code>builtin_tool</code>, and <code>host_tool</code> capabilities. |
+| High-recall selection | Uses no fixed top-k and no fixed Skill count; any plausibly task-relevant capabilities may be selected together. |
+| Auditable Receipt | <code>route(SelectionRouteInput(...))</code> returns <code>FINALIZED</code>, a fingerprint, and selection evidence. |
+| Read-only boundary | The Router does not execute endpoints, perform network discovery, install or authorize tools, or read hidden prompts or chain-of-thought. |
 
-### Coverage-first Skill selection
+## Four principles, four views
 
-![Skill coverage comic](docs/assets/readme/feature-skill-coverage.svg)
+### Discover broadly: make the inventory visible
 
-The Router reads the whole task first, then finds useful, non-overlapping methods in the live candidate set. Selecting fewer Skills is fine when every material work item is covered. Coverage Check is one bounded correction, not an invitation to expand the candidate list forever.
+![Discover broadly comic](docs/assets/readme-v2/discover-broadly.png)
 
-### Provider readiness and optimistic selection
+The cat uses a magnifying glass to inspect capability cards arriving from every direction. The scene represents a complete inventory sweep, including useful tail capabilities. Discovery comes first; any identity-resolved present record can enter semantic consideration, while metadata quality remains diagnostic.
 
-![Provider selection comic](docs/assets/readme/feature-provider-selection.svg)
+### Select generously: keep real value
 
-A Provider can enter semantic selection only when its instance is present and its capability metadata is sufficient. <code>PRESENT_UNVERIFIED</code> remains selectable; <code>KNOWN_UNAVAILABLE</code>, explicit negatives, insufficient metadata, and uncertified instances are excluded before selection.
+![Select generously comic](docs/assets/readme-v2/select-generously.png)
 
-### Safe execution and Receipt
+The dog keeps multiple capabilities that may help on the workbench; only clearly irrelevant, exact-duplicate, or safety-blocked items go aside. Selection is not a contest to minimize the count; it is a way to avoid missing useful task support.
 
-![Safe execution and Receipt](docs/assets/readme/feature-safe-execution.svg)
+### Multi-provider + safe execution: selected is not executed
 
-<code>route(SelectionRouteInput(...))</code> creates a <code>FINALIZED</code> Receipt. The Receipt records the original selection, supports, readiness, and execution needs. A later execution attempt is an independent audit outcome; it does not rewrite the original selection.
+![Safe execution comic](docs/assets/readme-v2/safe-execution.png)
 
-## How it works
+Multiple Providers can be selected together. Actual execution still belongs to an external execution layer with permissions and error handling. The shield and Receipt represent <code>selected ≠ auto executed</code>, as well as the boundary between <code>SELECT GENEROUSLY</code> and <code>EXECUTE CAREFULLY</code>.
 
-![Router workflow diagram](docs/assets/readme/router-flow.svg)
+### Architecture: from task to Receipt
 
-Keep the two boundaries separate: a Skill tells Codex how to do the work, while a Supporting Provider represents what the Host can execute now. <code>route()</code> accepts only inputs that pass trust, handoff, metadata, fingerprint, and lifecycle gates; it does not call a Provider endpoint itself.
+![Router architecture workflow](docs/assets/readme-v2/router-architecture.svg)
+
+The complete flow is:
+
+~~~text
+User Task
+  ↓
+TaskAnalysis
+  ↓
+Trusted Skill Discovery
+  ↓
+Full Inventory Semantic Sweep
+  ↓
+Skill Selection
+  ↓
+Skill Coverage Check
+  ↓
+Execution Needs
+  ↓
+Host Capability Snapshot
+  ↓
+Provider Discovery
+  ↓
+Full Provider Semantic Sweep
+  ↓
+Provider Selection
+  ↓
+Supporting Coverage Check
+  ↓
+route(SelectionRouteInput(...))
+  ↓
+FINALIZED Receipt
+  ↓
+ExecutionAttempt
+~~~
 
 ## Skill, Provider, and Plugin
 
-| Term | Responsibility | Formal selection? |
+| Term | Role | Router boundary |
 | --- | --- | --- |
-| Skill | Provides methods, constraints, and a full handoff that tell Codex how to do the work. | Yes, as a method Skill |
-| Supporting Provider | Provides a runtime capability callable by the current Host. | Yes, only as <code>app</code>, <code>mcp</code>, or <code>builtin_tool</code> |
-| Plugin | Holds package and provenance boundaries and may expose an App or MCP server. | No, a Plugin is never a formal Provider |
+| Skill | A method and quality specification for how to do the work, such as technical writing, verification, or image generation. | Found by trusted Skill discovery, considered semantically, and potentially selected. |
+| Provider | A formal capability that can support an execution need, such as an App, MCP, <code>builtin_tool</code>, or <code>host_tool</code>. | Found by runtime/provider discovery; presence, identity, and metadata enter consideration, while readiness remains execution evidence. |
+| Plugin | Package and provenance information. | Not a formal Provider and must not be treated as a directly executable endpoint. |
 
-## Provider readiness
+The formal Provider kinds are <code>app</code>, <code>mcp</code>, <code>builtin_tool</code>, and <code>host_tool</code>. A generic execution capability does not automatically displace a specialized image, diagram, or verification Provider. If each has plausible task-relevant value, multi-selection is allowed; overlap and redundancy are not exclusion reasons. A Plugin remains package/provenance information, not a formal Provider.
 
-| State | Meaning | Selection |
+App runtime evidence depends on whether the current Host/runtime source is available. A package declaration can preserve existence evidence, but the Router does not promise that every Host exposes a runtime app/list, and it does not turn a package declaration into a claim that a UI or endpoint is currently usable.
+
+## Discovery roots, Plugin paths, and Skill inventory cache
+
+Skill discovery uses authoritative known roots only. The fixed global roots are <code>$HOME/.agents/skills</code> and <code>$CODEX_HOME/skills</code>. <code>$CODEX_HOME/skills/.system</code> is the only explicitly legitimate SYSTEM known child under the second root; it is not a third independent global root and does not authorize recursive traversal of every hidden directory.
+
+Plugin discovery resolves the logical Plugin inventory to a deterministic exact package root, reads the exact manifest, and follows only its manifest-declared Skill container or direct Skill path. The shared Plugin cache ancestor is never treated as a recursive search root; Skill directories under a container are inventory entities, not separate root-plan nodes.
+
+At initialization or explicit source/plugin/project/runtime invalidation, the controller builds a <code>RootPlanSnapshot</code> and refreshes a <code>SkillInventorySnapshot</code>. When the caller/session source state is unchanged, an ordinary route reuses that snapshot: it does not rebuild the root plan, rescan the Skill filesystem, reopen Plugin manifests, or reopen every <code>SKILL.md</code>. This is a caller/session-owned cache, not a permanent cross-process persistent cache.
+
+## Host Capability Snapshot
+
+The Codex controller already knows which public capabilities the current session exposes. The Router receives their metadata through the typed <code>HostCapabilitySnapshot</code>, so “visible to the Host” and “available for Router consideration” share the same public capability boundary.
+
+A snapshot can describe a capability ID, kind, display name, summary, readiness, and provenance. It does not read a hidden prompt or chain-of-thought, and it does not pretend to have cryptographic trust proof. <code>trusted_host_snapshot</code> is a trust marker for the input envelope, not a cryptographic claim.
+
+Common readiness states:
+
+| Readiness | Meaning | Selectable? |
 | --- | --- | --- |
-| <code>VERIFIED_READY</code> | Stronger runtime evidence, exact identity, and a callable surface are present. | selectable |
-| <code>PRESENT_UNVERIFIED</code> | The instance exists and capability metadata is sufficient, but readiness is not fully verified. | selectable |
-| <code>KNOWN_UNAVAILABLE</code> | The capability is known to be unusable or has passed an explicit negative gate. | excluded |
+| <code>VERIFIED_READY</code> | Availability has supporting verification evidence. | Yes |
+| <code>PRESENT_UNVERIFIED</code> | The Host exposes the capability and its metadata is sufficient, but this run has no endpoint readiness proof. | Yes |
+| <code>KNOWN_UNAVAILABLE</code> | The capability is currently known not to run; the state is preserved for the execution boundary. | It may still enter semantic consideration; execution reports unavailable. |
 
-<code>selected</code> ≠ <code>guaranteed executable</code>. A production route preserves the readiness state; actual execution still depends on Host permission, authorization, connection, policy, and safety.
+<code>PRESENT_UNVERIFIED</code> is therefore not a discovery miss and not a promise of execution success. It is an auditable, selectable state whose actual result must be recorded by the execution layer.
+
+Disabled, <code>callable=false</code>, auth-required, disconnected, unknown readiness, and sparse/opaque metadata must not hide an existing identity-resolved capability before semantic consideration. An unknown Host hierarchy remains visible as <code>host_tool</code>; it is not guessed into App, MCP, or another Host kind.
+
+The Codex / Host main model owns TaskAnalysis, semantic Skill selection, Execution Needs, and semantic Provider selection. The Python Router owns deterministic discovery, identity normalization, validation, fingerprinting, handoff safety, and Receipt finalization. Python does not call an LLM from a raw prompt, and it does not replace Host reasoning with keyword mapping, semantic ranking, or an overlap winner.
+
+## High-recall discovery and selection
+
+The current flow processes the inventory in deterministic, bounded sweep batches instead of truncating it to an old top-k shortlist. Every resolved present Skill and formal Provider gets at least one semantic consideration; metadata quality and readiness remain diagnostic, and consideration does not imply selection.
+
+Selection policy:
+
+- There is no fixed Skill count.
+- Any Skill with plausible value for any part of the task may be selected; weak relevance, redundancy, overlap, and another Skill already being sufficient are not exclusion reasons.
+- There is no fixed Skill maximum and no top-k semantic truncation; multiple Skills may be selected whenever each may plausibly help the task.
+- When a capability is uncertain but plausibly useful, the tie-break is SELECT.
+- At most one bounded <code>Skill Coverage Check</code> may add a relevant Skill, including one that overlaps an already selected Skill.
+- Selection is not replaced by keyword-to-ID mapping, handwritten selection, synthetic records, or Python-only semantic judgment.
+
+The selection policy is <code>ANY PLAUSIBLE TASK-RELEVANT VALUE → SELECT</code>, but it is not blind selection of everything. Clearly irrelevant, exact canonical duplicates, explicitly constrained, or safety-boundary-blocked capabilities may still be excluded. Semantic redundancy is diagnostic, not semantic deduplication.
+
+## Skill source binding and freshness recovery
+
+One canonical Skill may have multiple authoritative physical sources. Beta9 retains that provenance but chooses one deterministic selected source; the current logical profile, profile fingerprint, handoff path, handoff instructions, and handoff fingerprint all derive from the same source. This prevents a profile from using Source A while handoff uses Source B.
+
+An ordinary route does not turn freshness policy into full Skill polling. Only a fingerprint mismatch during full handoff of a selected Skill triggers one bounded targeted refresh: the known authoritative source for that Skill is revalidated, a new immutable inventory snapshot is created, and handoff is retried once. A second mismatch returns <code>HANDOFF_REJECTION</code>. If the selection-visible semantic digest changed, the Router returns <code>SELECTION_REVALIDATION_REQUIRED</code> to the Host controller rather than silently reselecting in Python.
+
+### Capability miss taxonomy
+
+The Router does not collapse every failure into <code>NO MATCH</code>:
+
+| Category | Meaning |
+| --- | --- |
+| <code>DISCOVERY_MISS</code> | The trusted inventory did not discover a record that should have been formally discoverable. |
+| <code>SEMANTIC_CONSIDERATION_MISS</code> | A discovered, identity-resolved present record never entered semantic consideration. |
+| <code>BASE_SELECTION_MISS</code> | A capability was considered but a plausible base selection was missed. |
+| <code>COVERAGE_CHECK_MISS</code> | A coverage check failed to add an explicit, necessary coverage capability. |
+| <code>HANDOFF_REJECTION</code> | A later handoff or execution boundary rejected the selection. |
+| <code>EXPLICIT_NEGATIVE</code> | The user or task explicitly ruled out the capability. |
+| <code>CONSTRAINT_EXCLUSION</code> | A clear safety, environment, or other constraint excluded the capability. |
+
+For this acceptance, the target on the current trusted, formally discoverable inventory is <code>Relevant Skill Miss = 0</code>, <code>Relevant Provider Miss = 0</code>, <code>Discovery Miss = 0</code>, and <code>Semantic Consideration Miss = 0</code>. Clearly irrelevant capabilities are not counted as misses.
 
 ## Installation
 
-This repository is itself a Codex Skill source tree. Skill discovery requires <code>SKILL.md</code> in the target directory; there are no additional Python dependencies and no installer. Python 3.11 or newer is needed only for tests and local verification.
-
 ### Windows / PowerShell
 
-Step 1: verify Git.
+Paste the following into PowerShell. It uses the current user’s <code>~/.agents/skills</code> location and contains no private absolute path:
 
 ~~~powershell
-git --version
-~~~
-
-Step 2: create or confirm the Skills directory.
-
-~~~powershell
-$skillRoot = Join-Path $env:USERPROFILE ".agents\skills"
-$skillPath = Join-Path $skillRoot "codex-capability-router"
-New-Item -ItemType Directory -Force -Path $skillRoot | Out-Null
-~~~
-
-Step 3: clone into the correct Skill path, or update an existing clone with fast-forward only.
-
-~~~powershell
-if (Test-Path (Join-Path $skillPath ".git")) {
-    git -C $skillPath pull --ff-only
+$skillRoot = Join-Path $HOME ".agents\skills\codex-capability-router"
+if (Test-Path $skillRoot) {
+    if (-not (Test-Path (Join-Path $skillRoot ".git"))) {
+        throw "Target exists and is not a Git checkout: $skillRoot"
+    }
+    git -C $skillRoot pull --ff-only
 } else {
-    git clone https://github.com/Lzxpan/codex-capability-router.git $skillPath
+    New-Item -ItemType Directory -Force -Path (Split-Path $skillRoot) | Out-Null
+    git clone https://github.com/Lzxpan/codex-capability-router.git $skillRoot
 }
-~~~
-
-Step 4: confirm that <code>SKILL.md</code> exists.
-
-~~~powershell
-Test-Path (Join-Path $skillPath "SKILL.md")
-~~~
-
-Step 5: if the current Codex session has already loaded an older Skill inventory, open a new appropriate session so the updated Skill can be discovered.
-
-Step 6: run the minimum verification from the repository checkout.
-
-~~~powershell
-python -m unittest discover -s tests -p "test_*.py"
-python -m compileall -q codex_capability_router tests
+python -m unittest discover -s (Join-Path $skillRoot "tests") -p "test_*.py"
+python -m compileall -q (Join-Path $skillRoot "codex_capability_router") (Join-Path $skillRoot "tests")
 ~~~
 
 ### macOS / Linux
 
-Step 1: verify Git.
+Paste the following into a POSIX shell. <code>${HOME}</code> expands to the current user’s home directory:
 
 ~~~bash
-git --version
-~~~
-
-Steps 2–3: create the Skills directory, then clone or fast-forward update.
-
-~~~bash
-skill_root="\${HOME}/.agents/skills"
-skill_path="\${skill_root}/codex-capability-router"
-mkdir -p "$skill_root"
-if [ -d "$skill_path/.git" ]; then
-  git -C "$skill_path" pull --ff-only
+skill_root="${HOME}/.agents/skills/codex-capability-router"
+if [ -e "$skill_root" ]; then
+    if [ ! -d "$skill_root/.git" ]; then
+        printf '%s\n' "Target exists and is not a Git checkout: $skill_root" >&2
+        exit 1
+    fi
+    git -C "$skill_root" pull --ff-only
 else
-  git clone https://github.com/Lzxpan/codex-capability-router.git "$skill_path"
+    mkdir -p "$(dirname "$skill_root")"
+    git clone https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
 fi
+python -m unittest discover -s "$skill_root/tests" -p "test_*.py"
+python -m compileall -q "$skill_root/codex_capability_router" "$skill_root/tests"
 ~~~
 
-Step 4: confirm that <code>SKILL.md</code> exists.
-
-~~~bash
-test -f "$skill_path/SKILL.md"
-~~~
-
-Step 5: if the Codex session has cached an older inventory, open a new session.
-
-Step 6: run the minimum verification.
-
-~~~bash
-python3 -m unittest discover -s tests -p 'test_*.py'
-python3 -m compileall -q codex_capability_router tests
-~~~
-
-## Updating
-
-From the cloned Skill repository, use:
-
-~~~bash
-git pull --ff-only
-~~~
-
-Do not overwrite an existing Skill directory by hand. If the directory is not a Git clone, keep it intact and confirm the installation scope separately.
+Python 3.11 or newer is required. The package has no runtime dependencies; the tests use the Python standard library. If the target already exists but is not a Git checkout, the command stops rather than overwriting it.
 
 ## Quick Start
-
-Give Codex a natural-language task and let the Router decide from the task and trusted inventory. The examples do not name a Skill ID or Provider ID.
 
 ### A. A simple task
 
 ~~~text
-Read the configuration files in this repository, summarize the three most important constraints, and do not edit anything yet.
+Rewrite this release note into three clear, user-facing points.
+Keep version numbers and API names unchanged, then list anything uncertain.
 ~~~
 
-The Router should keep the smallest sufficient explanation or inspection coverage rather than adding capabilities just to increase the count.
+The Router builds one task understanding and selects every Skill with plausible value for any part of the task. Clearly irrelevant capabilities remain excluded; overlap and redundancy are not exclusion reasons.
 
-### B. A complex engineering task
+### B. A compound engineering task
 
 ~~~text
-Trace the input validation, error paths, and tests for a parser. Write a Traditional Chinese technical explanation and label which conclusions are supported only by source code.
+Inspect this repository’s configuration parser, add the missing regression test,
+check Python syntax and tests, and explain which external toolchain checks were not run.
 ~~~
 
-The Router may select complementary code explanation, verification, and technical writing methods; overlapping Skills should not all be selected.
+This may select several Skills at once, such as repository survey, implementation-aware verification, testing, and technical explanation. Any Skills with plausible task-relevant support may be selected together; overlap and redundancy do not impose a selection limit.
 
-### C. A task that needs external execution capability
+### C. Image + documentation + repository validation
 
 ~~~text
-Check the current repository test and compilation state. If the task needs a Host runtime, list the capabilities that are actually present and their readiness before running the required read-only checks.
+Rework the Chinese and English READMEs, create original hero, feature-comic,
+and architecture visuals with a consistent character style, then validate local links,
+image references, UTF-8, U+FFFD, privacy, and test results. Report a sanitized
+FINALIZED Receipt and any hardware or external checks that remain unverified.
 ~~~
 
-The Router creates <code>Execution Needs</code> first, then lets Codex choose among formal App, MCP, and builtin tool candidates. One Provider does not guarantee that the entire task is covered.
+This can use multi-Skill + multi-Provider routing: technical writing, visual explanation, image generation, repository verification, and session-exposed <code>builtin_tool</code> capabilities. The examples do not specify capability IDs.
 
-## Receipt example
+## Sanitized Receipt example
 
-This is a sanitized example, not the raw output of a user task:
+The following is an illustrative/sanitized structural example with private paths, credentials, hidden prompts, and chain-of-thought removed; its numbers are not live inventory or UI expected constants:
 
 ~~~json
 {
-  "task_summary": "Explain and verify a bounded repository change",
-  "selected_skills": ["documentation-method", "verification-method"],
+  "selection_state": "FINALIZED",
+  "task_analysis": {
+    "work_items": 5,
+    "material_deliverables": 9,
+    "constraints": 5,
+    "quality_expectations": 5
+  },
+  "skills": {
+    "discovered": 550,
+    "available": 549,
+    "semantically_considered": 549,
+    "never_considered": 0,
+    "plausible": 8,
+    "selected": 8
+  },
   "supporting_providers": [
-    {"kind": "builtin_tool", "readiness": "VERIFIED_READY"}
+    {"kind": "builtin_tool", "readiness": "PRESENT_UNVERIFIED"},
+    {"kind": "builtin_tool", "readiness": "PRESENT_UNVERIFIED"},
+    {"kind": "builtin_tool", "readiness": "PRESENT_UNVERIFIED"},
+    {"kind": "builtin_tool", "readiness": "PRESENT_UNVERIFIED"}
   ],
-  "status": "FINALIZED",
-  "fingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  "provider_metrics": {
+    "host_snapshot_capabilities": 4,
+    "discovered": 4,
+    "metadata_sufficient": 4,
+    "semantically_considered": 4,
+    "never_considered": 0,
+    "plausible": 4,
+    "selected": 4
+  },
+  "receipt": {
+    "fingerprint": "481ac81362e19674a5fbc1023cefdeb74377d4de002e4a43f9f9cb48ab8d32d0"
+  }
 }
 ~~~
 
-The Receipt contains no private paths, credentials, hidden prompts, or chain-of-thought. A production output retains provenance, supports, readiness, and the necessary audit fields.
+<code>FINALIZED</code> means the selection route completed with a traceable Receipt. It does not mean that every Provider endpoint succeeds in every environment.
 
-## Safety / Design boundaries
+The Selection Receipt is finalized once by <code>route()</code>; an external <code>ExecutionAttempt</code> is separate immutable outcome evidence and cannot rewrite the finalized Receipt.
 
-- No Python semantic routing; Python performs deterministic validation only.
-- No keyword-to-ID mapping, silent fallback, or fixed Skill count.
-- A Plugin is a package and provenance container, not a formal Provider.
-- Formal Provider kinds are <code>app</code>, <code>mcp</code>, and <code>builtin_tool</code>; a raw tool endpoint cannot bypass that boundary.
-- Execution still requires normal permission, authorization, connection, policy, and safety controls.
-- A <code>FINALIZED</code> selection is not silently rewritten after execution failure; a new decision requires a new route.
+## Safety and execution boundary
+
+- The Router is a read-only routing library, not a workflow engine.
+- <code>route(SelectionRouteInput(...))</code> creates selection and Receipt data; it does not call selected endpoints.
+- It does not automatically perform network discovery, OAuth, login, installation, flashing, release, or publishing.
+- Trusted discovery, metadata sufficiency, readiness, and execution outcome remain separate evidence.
+- If an external layer attempts a capability, it should create an <code>ExecutionAttempt</code> and record success, failure, blocked, or unavailable honestly. Execution failure must not be hidden inside selection.
+- The Router does not read hidden prompts, chain-of-thought, credentials, or private capability inventories.
 
 ## Current limitations
 
-- The Optimistic Provider Core is covered by deterministic regression tests, including the <code>PRESENT_UNVERIFIED</code> selectable path and explicit-negative exclusion.
-- The installed smoke path and the <code>builtin_tool</code> <code>functions.exec_command</code> <code>VERIFIED_READY</code> positive path are verified; this README acceptance also used the production <code>route()</code> to create a Receipt.
-- This Host did not expose a connectable official App Server surface, so official App/MCP live acceptance remains Host-surface blocked. App adapters, MCP adapters, and readiness contracts are tested, but this project does not claim that every App or MCP was live tested.
-- The repository does not execute Provider endpoints or automatically install, log in, authorize, or manage Plugins and Skills. Actual execution results must be recorded separately as <code>ExecutionAttempt</code> data.
-- The six README visuals are original SVG files stored in the repository; no external images, stock art, watermark, or external asset loading is used.
+- The Router is beta; the selection and Receipt schemas may evolve.
+- <code>PRESENT_UNVERIFIED</code> means a capability is publicly exposed with sufficient metadata. It does not prove endpoint, permission, network, or third-party availability.
+- The Router does not execute external tools or perform hardware, flashing, GPIO, UART, sensor, or real-device acceptance.
+- The <code>never_considered = 0</code> guarantee is bounded to the trusted, identity-resolved, formally discoverable present inventory and its bounded sweep; metadata quality is diagnostic, not a universal guarantee about an unknown outside world.
+- <code>RootPlanSnapshot</code> and <code>SkillInventorySnapshot</code> are caller/session-owned caches. They refresh on source or explicit controller-state changes; they are not permanent cross-process caches.
+- A selected-Skill freshness mismatch triggers one targeted refresh only; ordinary routes do not become full Skill polls.
+- A Plugin is package/provenance only and must not be described as a formal Provider.
+- Final GitHub rendering can still vary with repository theme, network resources, and user environment.
 
-## Tests
+## Validation and testing
 
-Current repository regression: **165/165 PASS**.
+Run these commands from the repository root:
 
-~~~bash
+~~~powershell
 python -m unittest discover -s tests -p "test_*.py"
 python -m compileall -q codex_capability_router tests
+git diff --check
 ~~~
 
-The suite covers TaskAnalysis, trusted-root discovery, Skill coverage, optimistic Provider readiness, official adapter gates, the Plugin boundary, Receipt finalization, and the execution outcome contract. The latest output from running the commands above is the source of truth.
+README V2 documentation QA should also verify:
 
-## Related documents
+- Local links and image references in both READMEs resolve to existing files.
+- All six major visual assets are readable, uncropped, watermark-free, free of existing IP characters, and consistent in cat/dog design, palette, and line language.
+- The architecture diagram has every required node in order, with no text overlap or cropping. <code>Host Capability Snapshot</code> follows <code>Execution Needs</code> and precedes the Provider sweep; <code>ExecutionAttempt</code> follows <code>FINALIZED Receipt</code>.
+- Text files decode as UTF-8 with no <code>U+FFFD</code>, and contain no private absolute paths, credentials, or tokens.
+- Test, compileall, and diff-check evidence is reported separately; host/static evidence must not be presented as formal external build or hardware PASS.
 
-- [Skill contract](SKILL.md)
-- [Traditional Chinese v0.2 user guide](docs/v0.2_user_guide.zh-TW.md)
-- [License](LICENSE)
+The project tests are host/static evidence. Without target hardware, flashing, an external endpoint, or a GitHub browser render, report <code>NOT_VERIFIED</code> or <code>HARDWARE_PENDING</code>.
+
+## Source map
+
+- <code>codex_capability_router/routing.py</code>: formal <code>route(SelectionRouteInput(...))</code> and <code>FINALIZED</code> Receipt.
+- <code>codex_capability_router/skill_plan.py</code>: fixed authoritative Skill roots, known-child coverage, and immutable root-plan snapshots.
+- <code>codex_capability_router/plugin_store.py</code>: bounded resolution from logical Plugins to deterministic exact package roots.
+- <code>codex_capability_router/inventory.py</code>: Skill inventory, source binding, profile fingerprints, and targeted freshness snapshots.
+- <code>codex_capability_router/inventory_sweep.py</code>: bounded full-inventory semantic sweep.
+- <code>codex_capability_router/host_snapshot.py</code>: typed <code>HostCapabilitySnapshot</code>.
+- <code>codex_capability_router/provider_adapters.py</code>: formal Provider discovery and readiness.
+- <code>codex_capability_router/supporting_context.py</code>: Supporting Provider selection context and <code>ExecutionAttempt</code> boundary.
+- <code>references/</code>: discovery/provenance, routing policy, and language conventions.
+- <code>tests/</code>: foundation, Provider, coverage-first, high-recall, and Host Capability Snapshot regression tests.
 
 ## License
 
-MIT; see [LICENSE](LICENSE).
+MIT

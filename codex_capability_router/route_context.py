@@ -22,8 +22,11 @@ from .inventory import (
     BasicProfile,
     EnrichedProfile,
     ProfileCache,
+    SkillInventorySnapshot,
+    refresh_skill_inventory_snapshot,
     refresh_skill_inventory,
 )
+from .skill_plan import RootPlanSnapshot
 from .routing import _is_controller
 from .selection import prepare_selection, validate_selection
 from .supporting_context import (
@@ -39,6 +42,14 @@ from .task_analysis import TaskAnalysis, validate_task_analysis
 # 原始內容：Skill context 只有 available/candidate/selected legacy metrics，selection item 也沒有 TaskAnalysis supports reference。
 # 修改原因：v0.2 coverage upgrade 需要保留 structured coverage evidence，同時維持 context read-only、stateless 與既有 compatibility projection。
 # 修改後功能：加入 supports、Host exposed/Router available 及 Skill-layer reference metrics；不進行 semantic coverage 判斷。
+# 修改紀錄（2026-09-02，Steve Peng）
+# 原始內容：Skill profile projection 沒有公開 metadata quality，存在但描述稀疏的 Skill 無法被診斷。
+# 修改原因：beta.3 讓 metadata 只影響品質標示，不影響 semantic consideration。
+# 修改後功能：route context 保留 SUFFICIENT/SPARSE/OPAQUE quality；full handoff validation 不變。
+# 修改紀錄（2026-09-01，Steve Peng）
+# 原始內容：正式 Skill context 的 candidate 仍可能來自 top-k relevance retrieval。
+# 修改原因：高召回 acceptance 要求 discovered available Skill 全部進 deterministic semantic consideration pool。
+# 修改後功能：v0.2 context 使用完整 digest sweep metrics 與 zero-never-considered invariant；不執行 Skill。
 
 
 ROUTE_CONTEXT_CONTRACT_VERSION = "v0.2-skill-route-context-v1"
@@ -200,9 +211,25 @@ class SkillContextMetrics:
     coverage_check_used: bool = False
     # 新增欄位置於既有欄位之後，保留既有 positional compatibility。
     trusted_root_skill_count: int | None = None
+    semantically_considered_count: int = 0
+    plausible_count: int = 0
+    never_considered_count: int = 0
+    sweep_batch_count: int = 0
+    sweep_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         """驗證 bounded counts，並在 available=0 時固定 ratio=null。"""
+
+        # 舊版直接建立 metrics 的呼叫沒有 sweep 欄位；視為其候選已進入
+        # 舊 contract 的 consideration，避免相容性 constructor 產生假違規。
+        if (
+            self.candidate_count
+            and self.semantically_considered_count == 0
+            and self.plausible_count == 0
+            and self.never_considered_count == 0
+            and self.sweep_fingerprint is None
+        ):
+            object.__setattr__(self, "semantically_considered_count", self.candidate_count)
 
         for field_name in ("available_count", "candidate_count", "selected_count"):
             value = getattr(self, field_name)
@@ -217,6 +244,10 @@ class SkillContextMetrics:
             "skill_supported_item_count",
             "skill_unreferenced_item_count",
             "possibly_relevant_unavailable_count",
+            "semantically_considered_count",
+            "plausible_count",
+            "never_considered_count",
+            "sweep_batch_count",
         ):
             value = getattr(self, field_name)
             if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
@@ -228,15 +259,24 @@ class SkillContextMetrics:
         if self.discovered_skill_count is not None and self.router_available_skill_count is not None:
             if self.router_available_skill_count > self.discovered_skill_count:
                 raise ValueError("router_available_skill_count cannot exceed discovered_skill_count")
-        if self.trusted_root_skill_count is not None and self.router_available_skill_count is not None:
-            if self.router_available_skill_count > self.trusted_root_skill_count:
-                raise ValueError("router_available_skill_count cannot exceed trusted_root_skill_count")
-        # Host exposed count 僅是 optional observation，不是 formal availability
-        # universe；它可以小於 trusted-root available count。
+        # package/runtime existence union 可以包含沒有 filesystem handoff root 的
+        # record，因此不可再要求 semantic available count <= trusted roots。
+        # trusted_root_skill_count 僅作來源觀測；handoff safety 仍由 selection
+        # validator 對 available_records 個別驗證。
         if self.candidate_count > self.available_count:
             raise ValueError("candidate_count cannot exceed available_count")
         if self.selected_count > self.candidate_count:
             raise ValueError("selected_count cannot exceed candidate_count")
+        if self.semantically_considered_count > self.candidate_count:
+            raise ValueError("semantically_considered_count cannot exceed candidate_count")
+        if self.plausible_count > self.semantically_considered_count:
+            raise ValueError("plausible_count cannot exceed semantically_considered_count")
+        if self.never_considered_count > self.candidate_count:
+            raise ValueError("never_considered_count cannot exceed candidate_count")
+        if self.semantically_considered_count + self.never_considered_count != self.candidate_count:
+            raise ValueError("Skill sweep counts must account for every candidate")
+        if self.sweep_fingerprint is not None and _FINGERPRINT.fullmatch(self.sweep_fingerprint) is None:
+            raise ValueError("sweep_fingerprint must be a SHA-256 digest or null")
         expected = (
             None
             if self.available_count == 0
@@ -267,6 +307,15 @@ class SkillContextMetrics:
             "skill_unreferenced_item_count": self.skill_unreferenced_item_count,
             "possibly_relevant_unavailable_count": self.possibly_relevant_unavailable_count,
             "coverage_check_used": self.coverage_check_used,
+            "skill_discovered_total": self.discovered_skill_count,
+            "skill_trusted_total": self.trusted_root_skill_count,
+            "skill_available_total": self.available_count,
+            "skill_semantically_considered_total": self.semantically_considered_count,
+            "skill_plausible_total": self.plausible_count,
+            "skill_selected_total": self.selected_count,
+            "skill_never_considered_total": self.never_considered_count,
+            "sweep_batch_count": self.sweep_batch_count,
+            "sweep_fingerprint": self.sweep_fingerprint,
         }
 
 
@@ -351,6 +400,9 @@ class SkillRouteContext:
     context_fingerprint: str
     # Host snapshot 僅供 observation/audit，不參與 formal Skill eligibility。
     host_exposure_fingerprint: str | None = None
+    # beta.7 cache identity；只保存 digest，不保存 root path 或 SKILL.md body。
+    root_plan_fingerprint: str | None = None
+    skill_inventory_fingerprint: str | None = None
 
     @property
     def task_analysis(self) -> TaskAnalysis:
@@ -387,6 +439,8 @@ class SkillRouteContext:
             "expanded_retrieval": self.expanded_retrieval,
             "context_fingerprint": self.context_fingerprint,
             "host_exposure_fingerprint": self.host_exposure_fingerprint,
+            "root_plan_fingerprint": self.root_plan_fingerprint,
+            "skill_inventory_fingerprint": self.skill_inventory_fingerprint,
         }
 
     def __post_init__(self) -> None:
@@ -402,6 +456,12 @@ class SkillRouteContext:
             raise ValueError("route context requires a SHA-256 context fingerprint")
         if self.host_exposure_fingerprint is not None and _FINGERPRINT.fullmatch(self.host_exposure_fingerprint) is None:
             raise ValueError("host exposure fingerprint must be a SHA-256 digest or null")
+        for name, value in (
+            ("root plan fingerprint", self.root_plan_fingerprint),
+            ("Skill inventory fingerprint", self.skill_inventory_fingerprint),
+        ):
+            if value is not None and _FINGERPRINT.fullmatch(value) is None:
+                raise ValueError(f"{name} must be a SHA-256 digest or null")
         object.__setattr__(self, "candidates", tuple(self.candidates))
         object.__setattr__(self, "enriched_profiles", tuple(self.enriched_profiles))
         object.__setattr__(self, "skill_eligibility", tuple(self.skill_eligibility))
@@ -420,6 +480,8 @@ class SkillRouteContext:
             retrieval_rounds=self.retrieval_rounds,
             expanded_retrieval=self.expanded_retrieval,
             host_exposure_fingerprint=self.host_exposure_fingerprint,
+            root_plan_fingerprint=self.root_plan_fingerprint,
+            skill_inventory_fingerprint=self.skill_inventory_fingerprint,
         )
         if self.context_fingerprint != expected:
             raise ValueError("route context fingerprint does not match its contents")
@@ -438,6 +500,9 @@ def prepare_route_context(
     cli: DiscoveryResult | None = None,
     manual: DiscoveryResult | None = None,
     host_exposure: HostSkillExposureEnvelope | None = None,
+    plugin_manifests: Sequence[Mapping[str, object]] = (),
+    skill_root_plan: RootPlanSnapshot | None = None,
+    skill_inventory_snapshot: SkillInventorySnapshot | None = None,
 ) -> SkillRouteContext:
     """準備 v0.2 Skill-only context；不呼叫 LLM、不建 Receipt、不接觸 Provider。"""
 
@@ -451,15 +516,35 @@ def prepare_route_context(
     if any(not isinstance(root, Path) for root in roots):
         raise ValueError("skill_roots must contain explicit Path values")
 
-    # 只沿用 beta.4 inventory/retrieval/hard-gate；不在此處新增 semantic selection。
-    inventory = refresh_skill_inventory(
-        roots,
-        cache=ProfileCache(),
-        runtime=runtime,
-        cli=cli,
-        manual=manual,
-        host_exposure=host_exposure,
-    )
+    if skill_root_plan is not None and not isinstance(skill_root_plan, RootPlanSnapshot):
+        raise TypeError("skill_root_plan must be a RootPlanSnapshot")
+    if skill_inventory_snapshot is not None and not isinstance(skill_inventory_snapshot, SkillInventorySnapshot):
+        raise TypeError("skill_inventory_snapshot must be a SkillInventorySnapshot")
+    if skill_inventory_snapshot is not None and skill_root_plan is not None:
+        if skill_inventory_snapshot.root_plan_fingerprint != skill_root_plan.fingerprint:
+            raise ValueError("Skill inventory snapshot does not match root plan")
+    # 正式 v0.2 route 使用完整 digest sweep；不在此處新增 Python semantic selection。
+    if skill_inventory_snapshot is not None:
+        inventory = skill_inventory_snapshot.inventory
+    elif skill_root_plan is not None:
+        inventory = refresh_skill_inventory_snapshot(
+            skill_root_plan,
+            runtime=runtime,
+            cli=cli,
+            manual=manual,
+            host_exposure=host_exposure,
+            plugin_manifests=plugin_manifests,
+        ).inventory
+    else:
+        inventory = refresh_skill_inventory(
+            roots,
+            cache=ProfileCache(),
+            runtime=runtime,
+            cli=cli,
+            manual=manual,
+            host_exposure=host_exposure,
+            plugin_manifests=plugin_manifests,
+        )
     preparation = prepare_selection(
         inventory,
         analysis.task_summary,
@@ -468,11 +553,17 @@ def prepare_route_context(
         explicit_skill_ids=explicit_skill_ids,
         known_enriched_profiles=known_enriched_profiles,
         use_expanded=expanded_retrieval,
+        high_recall=True,
     )
     candidates = tuple(preparation.candidates)
-    available_ids = {record.id for record in inventory.available_records}
+    present_records = inventory.present_records or inventory.available_records
+    present_ids = {
+        record.id
+        for record in present_records
+        if not record.routing_support and not _is_controller(record)
+    }
     eligibility = tuple(
-        _eligibility(record, record.id in available_ids)
+        _eligibility(record, record.id in present_ids)
         for record in sorted(inventory.records, key=lambda item: (item.id.casefold(), item.id, item.source))
     )
     handoff_references = tuple(
@@ -488,7 +579,7 @@ def prepare_route_context(
         for profile in sorted(candidates, key=lambda item: (item.id.casefold(), item.id))
     )
     metrics = SkillContextMetrics(
-        available_count=len(inventory.available_records),
+        available_count=len(present_records),
         candidate_count=len(candidates),
         selected_count=0,
         discovered_skill_count=len(inventory.profiles),
@@ -496,10 +587,19 @@ def prepare_route_context(
         host_exposed_skill_count=(
             None if host_exposure is None else len(inventory.host_exposed_skill_ids)
         ),
-        router_available_skill_count=len(inventory.available_records),
+        router_available_skill_count=len(present_records),
         task_analysis_indexed_item_count=len(analysis.indexed_items()),
         skill_supported_item_count=0,
         skill_unreferenced_item_count=len(analysis.indexed_items()),
+        semantically_considered_count=(
+            0 if preparation.inventory_sweep is None else len(preparation.inventory_sweep.considered_ids)
+        ),
+        plausible_count=0,
+        never_considered_count=(
+            0 if preparation.inventory_sweep is None else len(preparation.inventory_sweep.never_considered_ids)
+        ),
+        sweep_batch_count=(0 if preparation.inventory_sweep is None else preparation.inventory_sweep.batch_count),
+        sweep_fingerprint=(None if preparation.inventory_sweep is None else preparation.inventory_sweep.fingerprint),
     )
     decision_payloads = ValidatedDecisionPayloads(task_analysis=analysis)
     retrieval_rounds = preparation.state.retrieval_rounds
@@ -518,6 +618,18 @@ def prepare_route_context(
         host_exposure_fingerprint=(
             None if host_exposure is None else host_exposure.snapshot_fingerprint
         ),
+        root_plan_fingerprint=(
+            None
+            if skill_inventory_snapshot is None and skill_root_plan is None
+            else (
+                skill_inventory_snapshot.root_plan_fingerprint
+                if skill_inventory_snapshot is not None
+                else skill_root_plan.fingerprint
+            )
+        ),
+        skill_inventory_fingerprint=(
+            None if skill_inventory_snapshot is None else skill_inventory_snapshot.inventory_fingerprint
+        ),
     )
     return SkillRouteContext(
         validated_decision_payloads=decision_payloads,
@@ -533,6 +645,18 @@ def prepare_route_context(
         context_fingerprint=fingerprint,
         host_exposure_fingerprint=(
             None if host_exposure is None else host_exposure.snapshot_fingerprint
+        ),
+        root_plan_fingerprint=(
+            None
+            if skill_inventory_snapshot is None and skill_root_plan is None
+            else (
+                skill_inventory_snapshot.root_plan_fingerprint
+                if skill_inventory_snapshot is not None
+                else skill_root_plan.fingerprint
+            )
+        ),
+        skill_inventory_fingerprint=(
+            None if skill_inventory_snapshot is None else skill_inventory_snapshot.inventory_fingerprint
         ),
     )
 
@@ -581,6 +705,8 @@ def _context_fingerprint(
     retrieval_rounds: int,
     expanded_retrieval: bool,
     host_exposure_fingerprint: str | None = None,
+    root_plan_fingerprint: str | None = None,
+    skill_inventory_fingerprint: str | None = None,
 ) -> str:
     """固定正式 context input，排除 root path、完整 prompt、SKILL body 與 Provider。"""
 
@@ -606,6 +732,8 @@ def _context_fingerprint(
         "metrics": metrics_mapping,
         "retrieval_rounds": retrieval_rounds,
         "expanded_retrieval": expanded_retrieval,
+        "root_plan_fingerprint": root_plan_fingerprint,
+        "skill_inventory_fingerprint": skill_inventory_fingerprint,
         # Host exposure 僅是 optional observation；snapshot 改變或缺失時，
         # 不得使 formal Skill context 失效。
     }
@@ -625,6 +753,7 @@ def _profile_mapping(profile: BasicProfile) -> dict[str, object]:
         "provenance": list(profile.provenance),
         "fingerprint": profile.fingerprint,
         "stale": profile.stale,
+        "metadata_quality": profile.metadata_quality.value,
     }
 
 

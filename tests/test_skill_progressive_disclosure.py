@@ -34,16 +34,17 @@ class SkillProgressiveDisclosureTests(unittest.TestCase):
             self.assertTrue((REPOSITORY_ROOT / relative_path).is_file())
 
     def test_skill_entrypoint_states_v02_coverage_boundary(self) -> None:
-        """入口契約必須引導 coverage-first，但仍保留 availability hard gate。"""
+        """入口契約必須引導 high-recall 與 coverage-first 的可見性邊界。"""
 
         content = (REPOSITORY_ROOT / "SKILL.md").read_text(encoding="utf-8")
         for phrase in (
             "recalled",
-            "non-redundant",
+            "plausible task-relevant value",
+            "Semantic overlap is neutral",
             "Coverage Check",
-            "distinct_value",
             "trusted",
-            "unknown profiles are diagnostics only",
+            "unknown hierarchy",
+            "`host_tool`",
         ):
             self.assertIn(phrase, content)
 

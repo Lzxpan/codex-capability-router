@@ -275,7 +275,12 @@ class Phase2ProfileRetrievalTests(unittest.TestCase):
 
             self.assertEqual(
                 candidate_ids,
-                {"synthetic-explicit-available", "synthetic-explicit-unknown"},
+                {
+                    "synthetic-explicit-available",
+                    "synthetic-explicit-unavailable",
+                    "synthetic-explicit-disabled",
+                    "synthetic-explicit-unknown",
+                },
             )
 
     def test_expanded_retrieval_can_run_once_and_rejects_third_round(self) -> None:

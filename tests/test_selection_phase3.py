@@ -128,7 +128,7 @@ class SelectionContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_selection(output, inventory=refreshed, handoffs=handoffs)
 
-    def test_final_validator_rejects_unavailable_disabled_controller_and_support(self) -> None:
+    def test_final_validator_rejects_only_role_invalid_records(self) -> None:
         """unavailable、disabled、controller 與 routing-support 仍不可進入 final。"""
 
         root = Path(self.temp_dir.name)
@@ -156,7 +156,7 @@ class SelectionContractTests(unittest.TestCase):
                 "selection_status": "selected",
             }
             handoff = FullInstructionHandoff(profile.id, profile.fingerprint, "full")
-            if profile.id == "phase3-unknown":
+            if profile.id in {"phase3-unavailable", "phase3-disabled", "phase3-unknown"}:
                 self.assertEqual(validate_selection(output, inventory=inventory, handoffs=(handoff,)), output)
                 continue
             with self.subTest(skill=profile.id), self.assertRaises(ValueError):

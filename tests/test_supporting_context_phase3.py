@@ -163,12 +163,9 @@ class Phase3SupportingContextTests(unittest.TestCase):
                     [_need()], provider_declarations=(declaration,), readiness_evidence=(evidence,)
                 )
                 self.assertEqual(context.metrics.hard_eligible_count, 0)
-                if declaration.callable_exposure:
-                    self.assertEqual(context.metrics.present_unverified_count, 1)
-                    self.assertEqual(context.provider_digests[0].readiness_state, "PRESENT_UNVERIFIED")
-                else:
-                    self.assertEqual(context.metrics.explicit_negative_count, 1)
-                    self.assertEqual(context.provider_digests, ())
+                self.assertEqual(context.metrics.present_unverified_count, 1)
+                self.assertEqual(context.metrics.explicit_negative_count, 0)
+                self.assertEqual(context.provider_digests[0].readiness_state, "PRESENT_UNVERIFIED")
 
     def test_functions_exec_command_exact_verified_evidence_is_hard_eligible(self) -> None:
         """builtin Tool 只接受 exact functions.exec_command evidence。"""
@@ -260,14 +257,16 @@ class Phase3SupportingContextTests(unittest.TestCase):
         self.assertEqual(context.metrics.explicit_negative_count, 1)
         self.assertEqual(context.provider_digests, ())
 
-    def test_insufficient_capability_metadata_is_not_a_candidate(self) -> None:
-        """只有名稱或沒有 tool summary 時，Python 不猜用途。"""
+    def test_opaque_capability_metadata_is_still_a_candidate(self) -> None:
+        """metadata quality 為 OPAQUE 時仍交給 LLM consideration。"""
 
         declaration = replace(_provider(), description=None, display_name=None, callable_tools=())
         context = prepare_supporting_context([_need()], provider_declarations=(declaration,))
         self.assertEqual(context.metrics.present_count, 1)
-        self.assertEqual(context.metrics.metadata_insufficient_count, 1)
-        self.assertEqual(context.provider_digests, ())
+        self.assertEqual(context.metrics.metadata_opaque_count, 1)
+        self.assertEqual(context.metrics.semantically_considered_count, 1)
+        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(len(context.provider_digests), 1)
 
     def test_execution_attempt_is_bounded_and_provider_level(self) -> None:
         """Execution audit 只記錄 outcome，不接受 Plugin 或 raw/private data。"""

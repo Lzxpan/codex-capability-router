@@ -35,7 +35,7 @@ class Phase5ERouteSelectionTests(unittest.TestCase):
             self.assertEqual(result.selection_payload(), payload)
             self.assertTrue(result["router_invoked"])
 
-    def test_controller_support_and_unavailable_never_enter_final(self) -> None:
+    def test_controller_and_support_only_role_gates_remain(self) -> None:
         """既有 hard gates 仍在新版 production path 生效。"""
 
         with tempfile.TemporaryDirectory() as value:
@@ -57,8 +57,12 @@ class Phase5ERouteSelectionTests(unittest.TestCase):
                     preliminary_skill_ids=(skill_id,),
                     final_selection=payload,
                 )
-                with self.subTest(skill_id=skill_id), self.assertRaises(ValueError):
-                    route(request)
+                with self.subTest(skill_id=skill_id):
+                    if skill_id.endswith("controller") or skill_id.endswith("support"):
+                        with self.assertRaises(ValueError):
+                            route(request)
+                    else:
+                        self.assertEqual(route(request)["selected_skills"][0]["id"], skill_id)
 
     def test_legacy_router_input_cannot_trigger_selection(self) -> None:
         """舊 RouterInput 不得成為第二 production path。"""

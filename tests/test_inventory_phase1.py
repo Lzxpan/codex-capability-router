@@ -164,7 +164,7 @@ class Phase1InventoryTests(unittest.TestCase):
 
                 self.assertEqual(second.profiles[0].status.value, status)
                 self.assertEqual(second.profiles[0].description, "A synthetic skill.")
-                self.assertEqual(second.available_records, ())
+                self.assertEqual([record.id for record in second.available_records], ["runtime-sensitive-skill"])
                 self.assertEqual(cache.get("runtime-sensitive-skill").status.value, status)
 
     def test_runtime_precedence_retains_provenance(self) -> None:
@@ -241,7 +241,7 @@ class Phase1InventoryTests(unittest.TestCase):
 
             result = refresh_skill_inventory([root], cache=ProfileCache(), runtime=runtime)
 
-            self.assertEqual(result.available_records, ())
+            self.assertEqual([record.id for record in result.available_records], ["disabled-skill"])
 
     def test_cache_does_not_store_skill_content_or_private_paths(self) -> None:
         """cache 只保存 Basic Profile，不保存 SKILL.md 內容或 private path。"""

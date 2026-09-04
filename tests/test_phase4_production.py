@@ -184,8 +184,13 @@ class Phase4ProductionSelectionTests(unittest.TestCase):
         )
         for skill_id, options in cases:
             _write_skill(self.root, skill_id, **options)
-            with self.subTest(skill_id=skill_id), self.assertRaises(ValueError):
-                route(self._request("phase4 task", (skill_id,), self._selected((skill_id,))))
+            with self.subTest(skill_id=skill_id):
+                request = self._request("phase4 task", (skill_id,), self._selected((skill_id,)))
+                if options.get("controller") or options.get("routing_support"):
+                    with self.assertRaises(ValueError):
+                        route(request)
+                else:
+                    self.assertEqual(route(request)["selected_skills"][0]["id"], skill_id)
         _write_skill(self.root, "phase4-unknown", status="unknown")
         output = route(self._request("phase4 task", ("phase4-unknown",), self._selected(("phase4-unknown",))))
         self.assertEqual(output["selected_skills"][0]["id"], "phase4-unknown")

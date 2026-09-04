@@ -137,21 +137,21 @@ class LegacyFrontmatterCorrectnessTests(unittest.TestCase):
         handoffs = handoff_full_instructions(inventory, PreliminarySelection(("explain-code",)))
         self.assertEqual([handoff.id for handoff in handoffs], ["explain-code"])
 
-    def test_unknown_nested_metadata_is_rejected(self) -> None:
-        """未列入 bounded allowlist 的 metadata nested key 必須拒絕。"""
+    def test_unknown_nested_metadata_is_ignored_after_core_metadata(self) -> None:
+        """可讀的核心 metadata 足夠時，未知 nested metadata 不阻擋存在性發現。"""
 
         result = _discover_frontmatter_fixture("name: unknown-nested\nmetadata:\n  unknown: value")
-        self.assertEqual(result.records, ())
-        self.assertEqual([diagnostic.code for diagnostic in result.diagnostics], ["malformed_skill"])
+        self.assertEqual(len(result.records), 1)
+        self.assertEqual(result.diagnostics, ())
 
-    def test_deeper_source_frontmatter_nesting_is_rejected(self) -> None:
-        """source_frontmatter 只允許一層 scalar leaves。"""
+    def test_deeper_source_frontmatter_nesting_is_ignored_after_core_metadata(self) -> None:
+        """source_frontmatter 的額外巢狀內容不阻擋核心 Skill metadata。"""
 
         result = _discover_frontmatter_fixture(
             "name: deep-source\nmetadata:\n  source_frontmatter:\n    outer:\n      inner: value"
         )
-        self.assertEqual(result.records, ())
-        self.assertEqual([diagnostic.code for diagnostic in result.diagnostics], ["malformed_skill"])
+        self.assertEqual(len(result.records), 1)
+        self.assertEqual(result.diagnostics, ())
 
     def test_invalid_list_or_object_is_rejected(self) -> None:
         """legacy scalar 欄位不可偷偷接受 list/object。"""
@@ -159,28 +159,28 @@ class LegacyFrontmatterCorrectnessTests(unittest.TestCase):
         for value in ("[one, two]", '{"nested": "object"}'):
             with self.subTest(value=value):
                 result = _discover_frontmatter_fixture(f"name: invalid-structure\nmetadata:\n  source_repo: {value}")
-                self.assertEqual(result.records, ())
+                self.assertEqual([record.id for record in result.records], ["fixture-skill"])
                 self.assertEqual([diagnostic.code for diagnostic in result.diagnostics], ["malformed_skill"])
 
     def test_malformed_syntax_is_rejected(self) -> None:
         """缺少 key/value separator 的 frontmatter 維持 malformed。"""
 
         result = _discover_frontmatter_fixture("name: malformed-syntax\nmetadata:\n  source_repo broken")
-        self.assertEqual(result.records, ())
+        self.assertEqual([record.id for record in result.records], ["fixture-skill"])
         self.assertEqual([diagnostic.code for diagnostic in result.diagnostics], ["malformed_skill"])
 
     def test_duplicate_critical_key_is_rejected(self) -> None:
         """重複 critical key 不得由後值覆蓋前值。"""
 
         result = _discover_frontmatter_fixture("name: duplicate-critical\nname: duplicate-again")
-        self.assertEqual(result.records, ())
+        self.assertEqual([record.id for record in result.records], ["fixture-skill"])
         self.assertEqual([diagnostic.code for diagnostic in result.diagnostics], ["malformed_skill"])
 
     def test_sensitive_metadata_is_rejected(self) -> None:
         """credential-like metadata 不得進入 compatibility normalization。"""
 
         result = _discover_frontmatter_fixture("name: sensitive-metadata\nmetadata:\n  api_key: private")
-        self.assertEqual(result.records, ())
+        self.assertEqual([record.id for record in result.records], ["fixture-skill"])
         self.assertEqual([diagnostic.code for diagnostic in result.diagnostics], ["malformed_skill"])
 
 

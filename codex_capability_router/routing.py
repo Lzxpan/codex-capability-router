@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 import hashlib
 import json
@@ -11,6 +11,7 @@ import re
 import unicodedata
 
 from .models import DiscoveryResult
+from .supporting_context import FORMAL_SUPPORTING_PROVIDER_KINDS
 
 # 修改紀錄（2026-08-31，Steve Peng）
 # 原始內容：唯一 production route 沒有 Host exposure observability、coverage additions 或 possible-relevance diagnostics。
@@ -33,6 +34,18 @@ from .models import DiscoveryResult
 # 原始內容：Supporting Receipt 只接受 hard-eligible Provider，selected item 沒有 presence/readiness state，且 unknown provider 會被混入 no-match。
 # 修改原因：Optimistic Supporting Provider Selection Upgrade 要保存 PRESENT_UNVERIFIED selection evidence，並讓 no-match 只表示 semantic no-match。
 # 修改後功能：route() 接受 selectable Provider digest、輸出 selected readiness state，並保留獨立 execution outcome contract；不執行 Provider endpoint。
+# 修改紀錄（2026-09-01，Steve Peng）
+# 原始內容：Supporting final selection 沒有 multi-Provider base selection 與 bounded coverage addition evidence。
+# 修改原因：coverage-first Provider policy 必須能補回不同 Execution Need 的合理 Provider，且不以 generic fallback 壓掉 specialized capability。
+# 修改後功能：route() 保存 Supporting Coverage Check、base Provider IDs 與 additions；不增加 semantic ranking、retry 或 execution loop。
+# 修改紀錄（2026-09-01，Steve Peng）
+# 原始內容：唯一 route 的 Skill preparation 仍可能只使用 relevance shortlist，Host discovery envelope 也無法進 Supporting context。
+# 修改原因：高召回架構需要全 inventory consideration，並讓可信 Host-native/Plugin child discovery 沿用同一條 FINALIZED route。
+# 修改後功能：route() 使用 high-recall Skill pool、傳遞 optional discovery envelope，仍不執行 Provider 或改寫 execution safety。
+# 修改紀錄（2026-09-01，Steve Peng）
+# 原始內容：route() 的 Host discovery input 仍是可由一般 caller 建立的 raw mapping，沒有 session snapshot trust boundary。
+# 修改原因：Host Capability Snapshot Bridge 必須由 controller-owned typed envelope 進入 production route，且保留 snapshot audit metrics。
+# 修改後功能：新增 HostCapabilitySnapshot typed input validation 與 Supporting context 傳遞；legacy raw adapter 僅保留相容測試，不改 selection 或 execution。
 
 _CONTROLLER_ALIASES = frozenset(
     {
@@ -88,6 +101,9 @@ class SelectionReceipt(Mapping[str, object]):
     possible_relevance_status: str = "not_requested"
     coverage_additions: tuple[Mapping[str, object], ...] = ()
     coverage_check_used: bool = False
+    supporting_preliminary_provider_ids: tuple[str, ...] = ()
+    supporting_coverage_additions: tuple[Mapping[str, object], ...] = ()
+    supporting_coverage_check_used: bool = False
 
     @classmethod
     def _from_route(
@@ -121,6 +137,9 @@ class SelectionReceipt(Mapping[str, object]):
         possible_relevance_status: str = "not_requested",
         coverage_additions: tuple[Mapping[str, object], ...] = (),
         coverage_check_used: bool = False,
+        supporting_preliminary_provider_ids: tuple[str, ...] = (),
+        supporting_coverage_additions: tuple[Mapping[str, object], ...] = (),
+        supporting_coverage_check_used: bool = False,
     ) -> "SelectionReceipt":
         """建立 route 成功後的 receipt；外層不得直接模擬此 production result。"""
 
@@ -169,6 +188,9 @@ class SelectionReceipt(Mapping[str, object]):
             possible_relevance_status=possible_relevance_status,
             coverage_additions=tuple(dict(item) for item in coverage_additions),
             coverage_check_used=coverage_check_used,
+            supporting_preliminary_provider_ids=tuple(supporting_preliminary_provider_ids),
+            supporting_coverage_additions=tuple(dict(item) for item in supporting_coverage_additions),
+            supporting_coverage_check_used=supporting_coverage_check_used,
         )
 
     def __post_init__(self) -> None:
@@ -208,6 +230,14 @@ class SelectionReceipt(Mapping[str, object]):
             _require_receipt_text(diagnostic["exclusion_reason"], "possible relevance exclusion reason")
         if not isinstance(self.coverage_check_used, bool):
             raise ValueError("coverage_check_used must be boolean")
+        if not isinstance(self.supporting_coverage_check_used, bool):
+            raise ValueError("supporting_coverage_check_used must be boolean")
+        if len(set(self.supporting_preliminary_provider_ids)) != len(self.supporting_preliminary_provider_ids):
+            raise ValueError("supporting preliminary provider IDs must be unique")
+        for provider_id in self.supporting_preliminary_provider_ids:
+            _require_receipt_skill_id(provider_id)
+        if self.supporting_coverage_additions and not self.supporting_coverage_check_used:
+            raise ValueError("supporting coverage additions require supporting_coverage_check_used=true")
         if not isinstance(self.supporting_detail_expansion_used, bool):
             raise ValueError("supporting detail expansion flag must be boolean")
         if not self.supporting_detail_expansion_used and self.expanded_provider_tool_ids:
@@ -279,24 +309,53 @@ class SelectionReceipt(Mapping[str, object]):
             raise ValueError("selected Provider evidence must align with selected providers")
         provider_ids = []
         for kind, provider_id, purpose in self._selected_supporting_capabilities:
-            if kind not in {"mcp", "builtin_tool", "app", "plugin"}:
+            if kind not in FORMAL_SUPPORTING_PROVIDER_KINDS:
                 raise ValueError("receipt has unsupported provider kind")
             _require_receipt_skill_id(provider_id)
             _require_receipt_text(purpose, "supporting purpose")
             provider_ids.append(provider_id)
         if len(set(provider_ids)) != len(provider_ids):
             raise ValueError("receipt selected provider IDs must be unique")
+        if not set(self.supporting_preliminary_provider_ids).issubset(provider_ids):
+            raise ValueError("supporting preliminary providers must be final selected providers")
+        execution_need_ids = {need for need, _ in self._execution_needs}
+        if self.supporting_coverage_check_used and not execution_need_ids:
+            raise ValueError("supporting coverage check requires execution needs")
+        addition_provider_ids = []
+        for addition in self.supporting_coverage_additions:
+            if set(addition) != {"provider_id", "execution_need", "distinct_value"}:
+                raise ValueError("supporting coverage addition has an invalid receipt schema")
+            provider_id = addition["provider_id"]
+            _require_receipt_skill_id(provider_id)
+            _require_receipt_text(addition["execution_need"], "supporting coverage execution need")
+            _require_receipt_text(addition["distinct_value"], "supporting coverage distinct value")
+            if provider_id not in provider_ids:
+                raise ValueError("supporting coverage additions require final selected providers")
+            if provider_id in self.supporting_preliminary_provider_ids:
+                raise ValueError("supporting coverage additions must not duplicate base providers")
+            if addition["execution_need"] not in execution_need_ids:
+                raise ValueError("supporting coverage addition need must originate from execution needs")
+            addition_provider_ids.append(provider_id)
+        if len(set(addition_provider_ids)) != len(addition_provider_ids):
+            raise ValueError("supporting coverage addition providers must be unique")
         for evidence in self._selected_supporting_provider_evidence:
-            if set(evidence) != {
+            legacy_evidence_keys = {
                 "kind",
                 "canonical_provider_id",
                 "presence_state",
                 "readiness_state",
                 "provenance",
                 "digest_fingerprint",
-            }:
+            }
+            extended_evidence_keys = legacy_evidence_keys | {
+                "hierarchy_state",
+                "existence_evidence_state",
+                "metadata_quality",
+                "raw_external_identity",
+            }
+            if set(evidence) not in (legacy_evidence_keys, extended_evidence_keys):
                 raise ValueError("selected Provider evidence has an invalid schema")
-            if evidence["kind"] not in {"mcp", "builtin_tool", "app"}:
+            if evidence["kind"] not in FORMAL_SUPPORTING_PROVIDER_KINDS:
                 raise ValueError("selected Provider evidence must use a formal Provider kind")
             _require_receipt_skill_id(evidence["canonical_provider_id"])
             if evidence["presence_state"] not in {"PRESENT", "ABSENT", "EXPLICITLY_BLOCKED"}:
@@ -309,6 +368,19 @@ class SelectionReceipt(Mapping[str, object]):
                 raise ValueError("selected Provider evidence has an invalid readiness state")
             if evidence["presence_state"] != "PRESENT" or evidence["readiness_state"] == "KNOWN_UNAVAILABLE":
                 raise ValueError("selected Provider evidence is not selectable")
+            if "hierarchy_state" in evidence and evidence["hierarchy_state"] not in {None, "KNOWN", "UNKNOWN"}:
+                raise ValueError("selected Provider evidence has an invalid hierarchy state")
+            if "existence_evidence_state" in evidence and not isinstance(evidence["existence_evidence_state"], str):
+                raise ValueError("selected Provider evidence has an invalid existence evidence state")
+            if "metadata_quality" in evidence and evidence["metadata_quality"] not in {
+                "SUFFICIENT",
+                "SPARSE",
+                "OPAQUE",
+                "INSUFFICIENT_CAPABILITY_METADATA",
+            }:
+                raise ValueError("selected Provider evidence has an invalid metadata quality")
+            if "raw_external_identity" in evidence:
+                _require_receipt_text(evidence["raw_external_identity"], "raw Host identity")
             if not isinstance(evidence["provenance"], list):
                 raise ValueError("selected Provider provenance must be a list")
             for item in evidence["provenance"]:
@@ -428,6 +500,11 @@ class SelectionReceipt(Mapping[str, object]):
                 "possible_relevance_status": self.possible_relevance_status,
                 "coverage_additions": [dict(item) for item in self.coverage_additions],
                 "coverage_check_used": self.coverage_check_used,
+                "supporting_preliminary_provider_ids": list(self.supporting_preliminary_provider_ids),
+                "supporting_coverage_additions": [
+                    dict(item) for item in self.supporting_coverage_additions
+                ],
+                "supporting_coverage_check_used": self.supporting_coverage_check_used,
             }
         )
         if include_fingerprint:
@@ -458,6 +535,14 @@ class SelectionReceipt(Mapping[str, object]):
                     "digest_fingerprint": evidence["digest_fingerprint"],
                 }
             )
+            for field_name in (
+                "hierarchy_state",
+                "existence_evidence_state",
+                "metadata_quality",
+                "raw_external_identity",
+            ):
+                if field_name in evidence:
+                    result[field_name] = evidence[field_name]
         return result
 
     def __getitem__(self, key: str) -> object:
@@ -508,6 +593,16 @@ class SelectionRouteInput:
     supporting_selection: Mapping[str, object] | None = None
     supporting_detail_expansion_used: bool = False
     supporting_expanded_provider_tool_ids: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    supporting_preliminary_provider_ids: tuple[str, ...] = ()
+    supporting_coverage_additions: object = ()
+    supporting_coverage_check_used: bool = False
+    # Host discovery envelopes are optional; they are never queried or executed by route().
+    host_capability_snapshot: object | None = None
+    host_native_provider_registry: object = ()
+    plugin_manifests: tuple[object, ...] = ()
+    # beta.7 Skill plan/snapshot 由 controller/session lifecycle 建立；route 只重用 immutable snapshot。
+    skill_root_plan: object | None = None
+    skill_inventory_snapshot: object | None = None
 
     def __post_init__(self) -> None:
         """驗證 production input 的 bounded containers 與明確 Skill roots。"""
@@ -560,6 +655,33 @@ class SelectionRouteInput:
         object.__setattr__(self, "coverage_additions", tuple(self.coverage_additions))
         if self.coverage_additions and not self.coverage_check_used:
             raise ValueError("coverage additions require coverage_check_used=true")
+        if self.host_capability_snapshot is not None:
+            from .host_snapshot import HostCapabilitySnapshot
+
+            if not isinstance(self.host_capability_snapshot, HostCapabilitySnapshot):
+                raise TypeError("host_capability_snapshot must be a trusted HostCapabilitySnapshot")
+        if self.skill_root_plan is not None:
+            from .skill_plan import RootPlanSnapshot
+
+            if not isinstance(self.skill_root_plan, RootPlanSnapshot):
+                raise TypeError("skill_root_plan must be a RootPlanSnapshot")
+        if self.skill_inventory_snapshot is not None:
+            from .inventory import SkillInventorySnapshot
+
+            if not isinstance(self.skill_inventory_snapshot, SkillInventorySnapshot):
+                raise TypeError("skill_inventory_snapshot must be a SkillInventorySnapshot")
+            if self.skill_root_plan is not None and (
+                self.skill_inventory_snapshot.root_plan_fingerprint != self.skill_root_plan.fingerprint
+            ):
+                raise ValueError("skill inventory snapshot does not match skill root plan")
+        if isinstance(self.host_native_provider_registry, (str, bytes)) or not isinstance(
+            self.host_native_provider_registry, (tuple, list, Mapping)
+        ):
+            raise ValueError("host_native_provider_registry must be a trusted sequence or mapping")
+        if not isinstance(self.plugin_manifests, tuple):
+            object.__setattr__(self, "plugin_manifests", tuple(self.plugin_manifests))
+        if any(not isinstance(item, Mapping) for item in self.plugin_manifests):
+            raise ValueError("plugin_manifests must contain mappings")
         if not isinstance(self.expanded_retrieval, bool):
             raise ValueError("expanded_retrieval must be a boolean")
         for field_name in (
@@ -575,6 +697,55 @@ class SelectionRouteInput:
             raise ValueError("supporting_detail_expansion_used must be a boolean")
         if not isinstance(self.supporting_expanded_provider_tool_ids, tuple):
             object.__setattr__(self, "supporting_expanded_provider_tool_ids", tuple(self.supporting_expanded_provider_tool_ids))
+        if not isinstance(self.supporting_preliminary_provider_ids, tuple):
+            object.__setattr__(self, "supporting_preliminary_provider_ids", tuple(self.supporting_preliminary_provider_ids))
+        if any(not isinstance(item, str) or not item.strip() for item in self.supporting_preliminary_provider_ids):
+            raise ValueError("supporting preliminary provider IDs must be non-empty strings")
+        if len(set(self.supporting_preliminary_provider_ids)) != len(self.supporting_preliminary_provider_ids):
+            raise ValueError("supporting preliminary provider IDs must be unique")
+        if not isinstance(self.supporting_coverage_check_used, bool):
+            raise ValueError("supporting_coverage_check_used must be a boolean")
+        if isinstance(self.supporting_coverage_additions, (str, bytes)) or not isinstance(
+            self.supporting_coverage_additions, (tuple, list)
+        ):
+            raise ValueError("supporting_coverage_additions must be a sequence")
+        object.__setattr__(self, "supporting_coverage_additions", tuple(self.supporting_coverage_additions))
+        if self.supporting_coverage_additions and not self.supporting_coverage_check_used:
+            raise ValueError("supporting coverage additions require supporting_coverage_check_used=true")
+
+
+def prepare_route_input_from_controller_registry(
+    request: SelectionRouteInput,
+    controller_registry: Sequence[Mapping[str, object]],
+    *,
+    snapshot_id: str,
+    session_scope: str,
+    source: str = "controller-session-registry",
+    provenance: Sequence[str] = (),
+) -> SelectionRouteInput:
+    """將 controller-owned current-session registry 接到同一條 production route。
+
+    參數：`request` 是尚未附加 Host snapshot 的 immutable route input，
+    `controller_registry` 是 controller 已完成 trust boundary 的 public definitions。
+    回傳值會把 typed `HostCapabilitySnapshot` 放入 `host_capability_snapshot`；不接受
+    task summary、work items 或 keywords，避免 snapshot membership 依任務改變。本函式
+    只準備既有 `route()` 的輸入，不建立第二套路由、不呼叫 Host tool。
+    """
+
+    if not isinstance(request, SelectionRouteInput):
+        raise TypeError("request must be a SelectionRouteInput")
+    if request.host_capability_snapshot is not None:
+        raise ValueError("request already contains a Host capability snapshot")
+    from .host_snapshot import prepare_host_capability_snapshot
+
+    snapshot = prepare_host_capability_snapshot(
+        controller_registry,
+        snapshot_id=snapshot_id,
+        session_scope=session_scope,
+        source=source,
+        provenance=provenance or ("host-controller-registry",),
+    )
+    return replace(request, host_capability_snapshot=snapshot)
 
 
 def route(request: SelectionRouteInput) -> SelectionReceipt:
@@ -584,11 +755,12 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
         raise TypeError("legacy RouterInput is not a production selection path")
 
     # 延遲 import 避免 inventory/selection 的既有 controller hard gate 形成循環依賴。
-    from .inventory import ProfileCache, refresh_skill_inventory
+    from .inventory import ProfileCache, refresh_skill_inventory, refresh_skill_inventory_snapshot
     from .selection import (
         apply_correction,
         expanded_retrieve,
         handoff_full_instructions,
+        handoff_with_selected_skill_refresh,
         prepare_selection,
         preliminary_select,
         validate_coverage_additions,
@@ -608,17 +780,31 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
         SupportingRouteContext,
         prepare_supporting_context,
         supporting_selection_status,
+        validate_supporting_coverage_additions,
         validate_supporting_decision,
     )
 
     decision_payloads: ValidatedDecisionPayloads | None = None
     task_summary = request.task_summary
+    skill_snapshot = request.skill_inventory_snapshot
+    if skill_snapshot is None and request.skill_root_plan is not None:
+        skill_snapshot = refresh_skill_inventory_snapshot(
+            request.skill_root_plan,
+            runtime=request.runtime,
+            cli=request.cli,
+            manual=request.manual,
+            host_exposure=request.host_exposure,
+            plugin_manifests=request.plugin_manifests,
+        )
     phase4 = request.validated_decision_payloads is not None
     if not phase4 and (
         request.coverage_additions
         or request.coverage_check_used
         or request.possible_relevance_reasons is not None
         or request.possible_relevance_serialized_budget_bytes is not None
+        or request.supporting_preliminary_provider_ids
+        or request.supporting_coverage_additions
+        or request.supporting_coverage_check_used
     ):
         raise ValueError("v0.2 coverage evidence requires validated TaskAnalysis payloads")
     if phase4:
@@ -648,18 +834,25 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
             cli=request.cli,
             manual=request.manual,
             host_exposure=request.host_exposure,
+            plugin_manifests=request.plugin_manifests,
+            skill_root_plan=request.skill_root_plan,
+            skill_inventory_snapshot=skill_snapshot,
         )
         if current_skill_context.context_fingerprint != request.skill_context.context_fingerprint:
             raise ValueError("Skill context fingerprint is stale")
 
-    inventory = refresh_skill_inventory(
-        request.skill_roots,
-        cache=ProfileCache(),
-        runtime=request.runtime,
-        cli=request.cli,
-        manual=request.manual,
-        host_exposure=request.host_exposure,
-    )
+    if skill_snapshot is not None:
+        inventory = skill_snapshot.inventory
+    else:
+        inventory = refresh_skill_inventory(
+            request.skill_roots,
+            cache=ProfileCache(),
+            runtime=request.runtime,
+            cli=request.cli,
+            manual=request.manual,
+            host_exposure=request.host_exposure,
+            plugin_manifests=request.plugin_manifests,
+        )
     task_analysis_items = () if decision_payloads is None else decision_payloads.task_analysis.retrieval_items()
     preparation = prepare_selection(
         inventory,
@@ -668,10 +861,21 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
         explicit_skill_ids=request.explicit_skill_ids,
         known_enriched_profiles=request.known_enriched_profiles,
         task_analysis_items=task_analysis_items,
+        high_recall=True,
     )
 
     preliminary = preliminary_select(preparation, request.preliminary_skill_ids)
-    handoffs = handoff_full_instructions(inventory, preliminary)
+
+    def handoff(selected: object) -> tuple[object, ...]:
+        nonlocal inventory, skill_snapshot
+        if skill_snapshot is None:
+            return handoff_full_instructions(inventory, selected)  # type: ignore[arg-type]
+        recovered = handoff_with_selected_skill_refresh(skill_snapshot, selected)  # type: ignore[arg-type]
+        skill_snapshot = recovered.snapshot
+        inventory = recovered.snapshot.inventory
+        return recovered.handoffs
+
+    handoffs = handoff(preliminary)
 
     # expanded retrieval 是 caller/Codex 已判斷需要的 bounded state transition；
     # 它不會替換 final selected IDs，也不會重新進入 keyword ranking。
@@ -689,7 +893,7 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
     state = working_preparation.state.start_applicability_check()
     if request.correction_skill_ids:
         correction = preliminary_select(working_preparation, request.correction_skill_ids)
-        correction_handoffs = handoff_full_instructions(inventory, correction)
+        correction_handoffs = handoff(correction)
         handoffs = (*handoffs, *correction_handoffs)
         state = apply_correction(state, correction.skill_ids, handoffs=handoffs)
     else:
@@ -711,7 +915,7 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
         raise ValueError("coverage additions require additions applicability confirmation in final selection")
     if addition_ids:
         addition_preliminary = preliminary_select(working_preparation, addition_ids)
-        handoffs = (*handoffs, *handoff_full_instructions(inventory, addition_preliminary))
+        handoffs = (*handoffs, *handoff(addition_preliminary))
         # 修改紀錄（2026-08-31，Steve Peng）
         # 原始內容：Coverage Check additions 的 handoff 只傳給 final validator，route state 未同步。
         # 修改原因：FINALIZED state 必須完整記錄所有 selected Skill 的 handoff，避免 additions 成為 state 外的旁路。
@@ -730,6 +934,7 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
     supporting_status = "not_required"
     selected_supporting = ()
     unmet_execution_needs = ()
+    supporting_coverage_additions = ()
     if phase4:
         assert decision_payloads is not None
         needs = decision_payloads.execution_needs
@@ -737,7 +942,7 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
             if any(
                 value is not None
                 for value in (request.supporting_context, request.supporting_selection)
-            ) or request.supporting_provider_declarations or request.supporting_readiness_evidence or request.supporting_detail_expansion_used or request.supporting_expanded_provider_tool_ids:
+            ) or request.supporting_provider_declarations or request.supporting_readiness_evidence or request.host_capability_snapshot is not None or request.host_native_provider_registry or request.plugin_manifests or request.supporting_detail_expansion_used or request.supporting_expanded_provider_tool_ids:
                 raise ValueError("Provider context/selection is forbidden when execution_needs is empty")
             if decision_payloads.final_supporting_decision is not None:
                 raise ValueError("final supporting decision is forbidden when execution_needs is empty")
@@ -752,6 +957,9 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
                 needs,
                 provider_declarations=request.supporting_provider_declarations,
                 readiness_evidence=request.supporting_readiness_evidence,
+                host_capability_snapshot=request.host_capability_snapshot,
+                host_native_registry=request.host_native_provider_registry,
+                plugin_manifests=request.plugin_manifests,
             )
             if current_supporting_context.context_fingerprint != supporting_context.context_fingerprint:
                 raise ValueError("Supporting context fingerprint is stale")
@@ -797,6 +1005,21 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
             unmet_execution_needs = tuple(
                 item.to_mapping() for item in supporting_decision.final_selection.unmet_execution_needs
             )
+            supporting_coverage_additions = validate_supporting_coverage_additions(
+                request.supporting_coverage_additions,
+                candidate_ids=tuple(item.provider_id for item in supporting_context.provider_digests),
+                selected_ids=request.supporting_preliminary_provider_ids,
+                execution_needs=needs,
+            )
+            selected_provider_ids = {
+                item["canonical_provider_id"] for item in selected_supporting
+            }
+            if not set(request.supporting_preliminary_provider_ids).issubset(selected_provider_ids):
+                raise ValueError("supporting preliminary providers must be final selected providers")
+            if not {
+                item.provider_id for item in supporting_coverage_additions
+            }.issubset(selected_provider_ids):
+                raise ValueError("supporting coverage additions require final selected providers")
 
     selected_final_ids = tuple(item["id"] for item in validated["selected_skills"])
     # Host exposure 僅是 optional observability；formal FINALIZE 仍依賴 trusted-root
@@ -861,15 +1084,25 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
                 "readiness_state": digest_by_id[item["canonical_provider_id"]].readiness_state,
                 "provenance": list(digest_by_id[item["canonical_provider_id"]].provenance),
                 "digest_fingerprint": digest_by_id[item["canonical_provider_id"]].fingerprint,
+                "hierarchy_state": digest_by_id[item["canonical_provider_id"]].hierarchy_state,
+                "existence_evidence_state": digest_by_id[item["canonical_provider_id"]].existence_evidence_state.value,
+                "metadata_quality": digest_by_id[item["canonical_provider_id"]].metadata_quality.value,
+                "raw_external_identity": (
+                    digest_by_id[item["canonical_provider_id"]].raw_external_identity
+                    or digest_by_id[item["canonical_provider_id"]].provider_id
+                ),
             }
             for item in selected_supporting
         )
         supporting_metrics["selected_count"] = len(selected_supporting)
+        supporting_metrics["plausible_count"] = len(selected_supporting)
+        supporting_metrics["provider_plausible_total"] = len(selected_supporting)
     skill_metrics = None
     possible_relevance_diagnostics = ()
     possible_relevance_status = "not_requested"
     if phase4:
-        available_count = len(inventory.available_records)
+        present_records = inventory.present_records or inventory.available_records
+        available_count = len(present_records)
         candidate_count = len(working_preparation.candidates)
         analysis = decision_payloads.task_analysis if decision_payloads is not None else None
         indexed_count = 0 if analysis is None else len(analysis.indexed_items())
@@ -888,7 +1121,7 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
             "host_exposed_skill_count": (
                 None if request.host_exposure is None else len(inventory.host_exposed_skill_ids)
             ),
-            "router_available_skill_count": len(inventory.available_records),
+            "router_available_skill_count": len(present_records),
             "candidate_skill_count": candidate_count,
             "selected_skill_count": len(validated["selected_skills"]),
             "task_analysis_indexed_item_count": indexed_count,
@@ -896,6 +1129,31 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
             "skill_unreferenced_item_count": max(indexed_count - supported_count, 0),
             "possibly_relevant_unavailable_count": len(possible_relevance_diagnostics),
             "coverage_check_used": request.coverage_check_used,
+            "skill_discovered_total": len(inventory.profiles),
+            "skill_trusted_total": len(inventory.trusted_root_skill_ids),
+            "skill_available_total": candidate_count,
+            "skill_semantically_considered_total": (
+                0
+                if working_preparation.inventory_sweep is None
+                else len(working_preparation.inventory_sweep.considered_ids)
+            ),
+            "skill_plausible_total": len(validated["selected_skills"]),
+            "skill_selected_total": len(validated["selected_skills"]),
+            "skill_never_considered_total": (
+                0
+                if working_preparation.inventory_sweep is None
+                else len(working_preparation.inventory_sweep.never_considered_ids)
+            ),
+            "skill_sweep_batch_count": (
+                0
+                if working_preparation.inventory_sweep is None
+                else working_preparation.inventory_sweep.batch_count
+            ),
+            "skill_sweep_fingerprint": (
+                None
+                if working_preparation.inventory_sweep is None
+                else working_preparation.inventory_sweep.fingerprint
+            ),
             # beta.4 aliases retained for read compatibility.
             "available_count": available_count,
             "candidate_count": candidate_count,
@@ -934,6 +1192,9 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
         possible_relevance_status=possible_relevance_status,
         coverage_additions=tuple(item.to_mapping() for item in coverage_additions),
         coverage_check_used=request.coverage_check_used,
+        supporting_preliminary_provider_ids=request.supporting_preliminary_provider_ids,
+        supporting_coverage_additions=tuple(item.to_mapping() for item in supporting_coverage_additions),
+        supporting_coverage_check_used=request.supporting_coverage_check_used,
         supporting_metrics=supporting_metrics,
     )
 

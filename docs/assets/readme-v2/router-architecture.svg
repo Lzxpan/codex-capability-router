@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1570" viewBox="0 0 1400 1570" role="img" aria-labelledby="title desc">
+  <title id="title">Codex Capability Router architecture</title>
+  <desc id="desc">A bounded flow from User Task through Host TaskAnalysis, cached Skill and Provider sweeps, selection, route, FINALIZED Receipt, and ExecutionAttempt.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08142f"/>
+      <stop offset="1" stop-color="#172957"/>
+    </linearGradient>
+    <linearGradient id="node" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fbff"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="final" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="1" stop-color="#fed7aa"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#020617" flood-opacity=".35"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#7dd3fc"/>
+    </marker>
+    <style>
+      .title { font: 800 36px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #f8fafc; }
+      .subtitle { font: 500 18px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #bfdbfe; }
+      .node-title { font: 800 24px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #0f1d3c; }
+      .node-sub { font: 500 16px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #334155; }
+      .note-title { font: 800 19px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #f8fafc; }
+      .note-text { font: 500 16px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #dbeafe; }
+      .small { font: 700 14px system-ui, -apple-system, "Segoe UI", sans-serif; fill: #fef3c7; letter-spacing: 1.2px; }
+      .flow { stroke: #7dd3fc; stroke-width: 5; fill: none; marker-end: url(#arrow); }
+      .branch { stroke: #fbbf24; stroke-width: 3; fill: none; stroke-dasharray: 10 8; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="1570" rx="32" fill="url(#bg)"/>
+  <circle cx="1160" cy="220" r="240" fill="#38bdf8" opacity=".08"/>
+  <circle cx="240" cy="1340" r="300" fill="#f97316" opacity=".06"/>
+  <text x="70" y="72" class="title">Router architecture</text>
+  <text x="70" y="104" class="subtitle">One bounded, auditable path from a user task to a separately recorded execution attempt.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="300" y="132" width="700" height="68" rx="18" fill="url(#node)"/>
+    <rect x="300" y="228" width="700" height="68" rx="18" fill="url(#node)"/>
+    <rect x="300" y="324" width="700" height="68" rx="18" fill="url(#node)"/>
+    <rect x="300" y="420" width="700" height="68" rx="18" fill="url(#node)"/>
+    <rect x="300" y="516" width="700" height="68" rx="18" fill="url(#node)"/>
+    <rect x="300" y="612" width="700" height="68" rx="18" fill="url(#node)"/>
+    <rect x="300" y="708" width="700" height="68" rx="18" fill="url(#node)"/>
+    <rect x="300" y="804" width="700" height="68" rx="18" fill="url(#node)"/>
+    <rect x="300" y="900" width="700" height="68" rx="18" fill="url(#node)"/>
+    <rect x="300" y="996" width="700" height="68" rx="18" fill="url(#node)"/>
+    <rect x="300" y="1092" width="700" height="68" rx="18" fill="url(#node)"/>
+    <rect x="300" y="1188" width="700" height="68" rx="18" fill="url(#node)"/>
+    <rect x="300" y="1284" width="700" height="68" rx="18" fill="#dbeafe"/>
+    <rect x="300" y="1380" width="700" height="68" rx="18" fill="url(#final)"/>
+    <rect x="300" y="1476" width="700" height="68" rx="18" fill="url(#final)"/>
+  </g>
+
+  <path class="flow" d="M650 200V220"/>
+  <path class="flow" d="M650 296V316"/>
+  <path class="flow" d="M650 392V412"/>
+  <path class="flow" d="M650 488V508"/>
+  <path class="flow" d="M650 584V604"/>
+  <path class="flow" d="M650 680V700"/>
+  <path class="flow" d="M650 776V796"/>
+  <path class="flow" d="M650 872V892"/>
+  <path class="flow" d="M650 968V988"/>
+  <path class="flow" d="M650 1064V1084"/>
+  <path class="flow" d="M650 1160V1180"/>
+  <path class="flow" d="M650 1256V1276"/>
+  <path class="flow" d="M650 1352V1372"/>
+  <path class="flow" d="M650 1448V1468"/>
+
+  <g text-anchor="middle">
+    <text x="650" y="162" class="node-title">User Task</text>
+    <text x="650" y="186" class="node-sub">bounded request, constraints, and intended outcome</text>
+    <text x="650" y="258" class="node-title">TaskAnalysis</text>
+    <text x="650" y="282" class="node-sub">work items · deliverables · constraints · quality expectations</text>
+    <text x="650" y="354" class="node-title">Trusted Skill Discovery</text>
+    <text x="650" y="378" class="node-sub">fixed authoritative roots; cached inventory on ordinary routes</text>
+    <text x="650" y="450" class="node-title">Full Inventory Semantic Sweep</text>
+    <text x="650" y="474" class="node-sub">every resolved present Skill enters consideration</text>
+    <text x="650" y="546" class="node-title">Skill Selection</text>
+    <text x="650" y="570" class="node-sub">select any plausibly task-relevant Skill; overlap is allowed</text>
+    <text x="650" y="642" class="node-title">Skill Coverage Check</text>
+    <text x="650" y="666" class="node-sub">one bounded check may add another plausible Skill</text>
+    <text x="650" y="738" class="node-title">Execution Needs</text>
+    <text x="650" y="762" class="node-sub">what the current task needs a Host to do</text>
+    <text x="650" y="834" class="node-title">Host Capability Snapshot</text>
+    <text x="650" y="858" class="node-sub">typed public session capabilities; no hidden prompt or CoT</text>
+    <text x="650" y="930" class="node-title">Provider Discovery</text>
+    <text x="650" y="954" class="node-sub">formal App · MCP · builtin_tool · host_tool inventory</text>
+    <text x="650" y="1026" class="node-title">Full Provider Semantic Sweep</text>
+    <text x="650" y="1050" class="node-sub">every present, identity-resolved Provider enters consideration</text>
+    <text x="650" y="1122" class="node-title">Provider Selection</text>
+    <text x="650" y="1146" class="node-sub">multi-Provider selection; no fixed maximum</text>
+    <text x="650" y="1218" class="node-title">Supporting Coverage Check</text>
+    <text x="650" y="1242" class="node-sub">one bounded check may add distinct execution coverage</text>
+    <text x="650" y="1314" class="node-title">route(SelectionRouteInput(...))</text>
+    <text x="650" y="1338" class="node-sub">fresh context, handoff, schema, and fingerprint validation</text>
+    <text x="650" y="1410" class="node-title">FINALIZED Receipt</text>
+    <text x="650" y="1434" class="node-sub">immutable selection, readiness evidence, supports, and receipt fingerprint</text>
+    <text x="650" y="1506" class="node-title">ExecutionAttempt</text>
+    <text x="650" y="1530" class="node-sub">separate outcome; success or failure never rewrites the Receipt</text>
+  </g>
+
+  <g>
+    <rect x="54" y="330" width="210" height="154" rx="18" fill="#12315a" stroke="#38bdf8" stroke-width="2"/>
+    <text x="74" y="363" class="note-title">Consideration gate</text>
+    <text x="74" y="395" class="note-text">PRESENT</text>
+    <text x="74" y="419" class="note-text">+</text>
+    <text x="74" y="443" class="note-text">IDENTITY RESOLVED</text>
+    <text x="74" y="467" class="note-text">→ CONSIDERED</text>
+    <path class="branch" d="M264 406H300"/>
+
+    <rect x="1040" y="735" width="304" height="174" rx="18" fill="#12315a" stroke="#fbbf24" stroke-width="2"/>
+    <text x="1064" y="770" class="note-title">Readiness is separate</text>
+    <text x="1064" y="804" class="note-text">VERIFIED_READY</text>
+    <text x="1064" y="828" class="note-text">or</text>
+    <text x="1064" y="852" class="note-text">PRESENT_UNVERIFIED / KNOWN_UNAVAILABLE</text>
+    <text x="1064" y="883" class="note-text">→ CONSIDERATION PRESERVED</text>
+    <path class="branch" d="M1000 838H1040"/>
+
+    <rect x="1040" y="988" width="304" height="168" rx="18" fill="#12315a" stroke="#a78bfa" stroke-width="2"/>
+    <text x="1064" y="1023" class="note-title">Provider boundary</text>
+    <text x="1064" y="1057" class="note-text">Plugin = package /</text>
+    <text x="1064" y="1081" class="note-text">provenance only</text>
+    <text x="1064" y="1115" class="note-text">Formal kinds:</text>
+    <text x="1064" y="1139" class="note-text">App · MCP · builtin_tool · host_tool</text>
+    <path class="branch" d="M1000 1030H1040"/>
+
+    <rect x="54" y="1110" width="210" height="132" rx="18" fill="#12315a" stroke="#fb7185" stroke-width="2"/>
+    <text x="74" y="1145" class="note-title">Safety boundary</text>
+    <text x="74" y="1177" class="note-text">selected</text>
+    <text x="74" y="1201" class="note-text">≠ auto executed</text>
+    <text x="74" y="1225" class="note-text">permission + outcome</text>
+    <path class="branch" d="M264 1170H300"/>
+  </g>
+
+  <text x="1060" y="1210" class="small">FULL RECALL, BOUNDED HANDOFF</text>
+</svg>

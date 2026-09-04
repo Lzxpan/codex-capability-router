@@ -4,10 +4,26 @@
 # 原始內容：Phase 3 只準備 hard-eligible Provider digest/detail references，尚無 final decision protocol。
 # 修改原因：Phase 4 需要 bounded request_detail/final_selection、status gate 與 exact Provider validation。
 # 修改後功能：新增 immutable Supporting decision contracts；只驗證 schema、canonical identity、readiness 與原始 need 來源，不做 semantic selection 或 endpoint invocation。
+# 修改紀錄（2026-09-02，Steve Peng）
+# 原始內容：metadata insufficient 會在 semantic consideration 前排除 Provider。
+# 修改原因：beta.3 的存在優先 contract 要求所有已解析 identity 都至少被 LLM 看見。
+# 修改後功能：metadata 改為 SUFFICIENT/SPARSE/OPAQUE 品質診斷；品質與 readiness 都不再是 consideration gate。
+# 修改紀錄（2026-09-02，Steve Peng）
+# 原始內容：外部 Plugin identity 直接放入 canonical host_grouping。
+# 修改原因：真實 Plugin identity 可含 `@` 等 canonical key 不允許的字元。
+# 修改後功能：保存 raw_external_identity，並以 stable hash-backed canonical grouping key 供 exact merge。
 # 修改紀錄（2026-09-01，Steve Peng）
 # 原始內容：只有 hard-eligible readiness certificate 才能建立 Provider digest，unknown readiness 會被排除。
 # 修改原因：Optimistic Supporting Provider Selection Upgrade 要分離 instance presence、capability metadata 與 runtime readiness。
 # 修改後功能：PRESENT_UNVERIFIED Provider 可進 semantic candidate；explicit negative 與 metadata insufficient 仍在 semantic selection 前排除，並新增最小 execution outcome record。
+# 修改紀錄（2026-09-01，Steve Peng）
+# 原始內容：Supporting context 沒有 discovery evidence 分層與完整 Provider digest sweep metrics。
+# 修改原因：High-recall inventory discovery 必須把 discovery、presence、readiness 分開，且所有 selectable digest 至少進一次 semantic consideration。
+# 修改後功能：新增 discovery evidence state、generic Host/Plugin envelope 接口與 deterministic provider sweep evidence；不執行 Provider。
+# 修改紀錄（2026-09-01，Steve Peng）
+# 原始內容：Supporting context 只能接 raw Host registry，沒有 controller-owned Host snapshot identity 與 hierarchy metrics。
+# 修改原因：Host snapshot bridge 必須保留 snapshot fingerprint，並將 formal Provider evidence 合併後送入同一條 sweep。
+# 修改後功能：接收 validated HostCapabilitySnapshot、合併 exact Provider evidence、輸出 Host snapshot metrics；不改 Skill path 或 execution safety。
 
 from __future__ import annotations
 
@@ -19,15 +35,23 @@ import math
 from pathlib import PurePosixPath, PureWindowsPath
 import re
 
+from .host_snapshot import HostCapabilitySnapshot
+from .inventory_sweep import build_inventory_sweep, provider_digest
+from .existence import ExistenceEvidenceState, MetadataQuality, classify_metadata_quality
+
 
 SUPPORTING_CONTEXT_CONTRACT_VERSION = "v0.2-supporting-context-v2"
 READINESS_EVIDENCE_CONTRACT_VERSION = "v0.2-phase0-runtime-readiness-v1"
 _FINGERPRINT = re.compile(r"^[0-9a-f]{64}$")
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
-FORMAL_SUPPORTING_PROVIDER_KINDS = frozenset({"app", "mcp", "builtin_tool"})
+_PUBLIC_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@-]*$")
+FORMAL_SUPPORTING_PROVIDER_KINDS = frozenset({"app", "mcp", "builtin_tool", "host_tool"})
 PROVIDER_PRESENCE_STATES = frozenset({"PRESENT", "ABSENT", "EXPLICITLY_BLOCKED"})
 PROVIDER_READINESS_STATES = frozenset({"VERIFIED_READY", "PRESENT_UNVERIFIED", "KNOWN_UNAVAILABLE"})
-PROVIDER_METADATA_STATES = frozenset({"SUFFICIENT", "INSUFFICIENT_CAPABILITY_METADATA"})
+PROVIDER_METADATA_STATES = frozenset({"SUFFICIENT", "SPARSE", "OPAQUE", "INSUFFICIENT_CAPABILITY_METADATA"})
+DISCOVERY_EVIDENCE_STATES = frozenset(
+    {"DISCOVERED_TRUSTED", "DISCOVERED_DECLARED", "DECLARED_ONLY", "NOT_DISCOVERED"}
+)
 EXECUTION_OUTCOMES = frozenset(
     {
         "SUCCESS",
@@ -213,6 +237,31 @@ class SupportingFinalSelection:
         return {
             "selected_supporting_capabilities": [item.to_mapping() for item in self.selected_supporting_capabilities],
             "unmet_execution_needs": [item.to_mapping() for item in self.unmet_execution_needs],
+        }
+
+
+@dataclass(frozen=True)
+class SupportingCoverageAddition:
+    """單一 bounded Supporting Coverage Check 的新增 Provider 證據。"""
+
+    provider_id: str
+    execution_need: str
+    distinct_value: str
+
+    def __post_init__(self) -> None:
+        """驗證新增 Provider、原始 Execution Need 與可公開的 distinct value。"""
+
+        object.__setattr__(self, "provider_id", _identifier(self.provider_id, "coverage provider id"))
+        object.__setattr__(self, "execution_need", _safe_text(self.execution_need, "coverage execution need", 256))
+        object.__setattr__(self, "distinct_value", _safe_text(self.distinct_value, "coverage distinct value", 512))
+
+    def to_mapping(self) -> dict[str, str]:
+        """輸出不含 hidden reasoning 的 bounded Supporting coverage evidence。"""
+
+        return {
+            "provider_id": self.provider_id,
+            "execution_need": self.execution_need,
+            "distinct_value": self.distinct_value,
         }
 
 
@@ -431,6 +480,12 @@ class SupportingProviderDeclaration:
     display_name: str | None = None
     presence_state: str = "PRESENT"
     explicit_negative_reason: str | None = None
+    discovery_evidence_state: str = "DISCOVERED_TRUSTED"
+    existence_evidence_state: ExistenceEvidenceState = ExistenceEvidenceState.RUNTIME_ENTITY_PRESENT
+    raw_external_identity: str | None = None
+    canonical_grouping_key: str | None = None
+    metadata_quality: MetadataQuality | None = None
+    hierarchy_state: str | None = None
 
     def __post_init__(self) -> None:
         """驗證 Host identity/grouping 與 exact callable surface。"""
@@ -438,8 +493,20 @@ class SupportingProviderDeclaration:
         object.__setattr__(self, "provider_id", _identifier(self.provider_id, "provider id"))
         if self.kind not in _PROVIDER_KINDS:
             raise ValueError("unsupported supporting provider kind")
+        if self.hierarchy_state is not None:
+            if self.hierarchy_state not in {"KNOWN", "UNKNOWN"}:
+                raise ValueError("unsupported provider hierarchy state")
+            if self.kind == "host_tool" and self.hierarchy_state != "UNKNOWN":
+                raise ValueError("host_tool requires UNKNOWN hierarchy state")
         if self.presence_state not in PROVIDER_PRESENCE_STATES:
             raise ValueError("unsupported provider presence state")
+        if self.discovery_evidence_state not in DISCOVERY_EVIDENCE_STATES:
+            raise ValueError("unsupported discovery evidence state")
+        if not isinstance(self.existence_evidence_state, ExistenceEvidenceState):
+            try:
+                object.__setattr__(self, "existence_evidence_state", ExistenceEvidenceState(self.existence_evidence_state))
+            except ValueError as error:
+                raise ValueError("unsupported provider existence evidence state") from error
         object.__setattr__(self, "host_identity", _identifier(self.host_identity, "host identity"))
         object.__setattr__(self, "host_grouping", _identifier_tuple(self.host_grouping, "host_grouping"))
         object.__setattr__(self, "description", _nullable_text(self.description, "provider description", 1024))
@@ -448,13 +515,37 @@ class SupportingProviderDeclaration:
             raise ValueError("callable_exposure must be boolean")
         object.__setattr__(self, "provenance", _provenance(self.provenance))
         if self.display_name is not None:
-            object.__setattr__(self, "display_name", _safe_text(self.display_name, "provider display name", 512))
+            object.__setattr__(self, "display_name", _safe_public_label(self.display_name, "provider display name", 512))
         if self.explicit_negative_reason is not None:
             object.__setattr__(
                 self,
                 "explicit_negative_reason",
                 _safe_text(self.explicit_negative_reason, "provider negative reason", 512),
             )
+        if self.raw_external_identity is not None:
+            object.__setattr__(
+                self,
+                "raw_external_identity",
+                _safe_public_label(self.raw_external_identity, "raw external identity", 512),
+            )
+        if self.canonical_grouping_key is not None:
+            object.__setattr__(
+                self,
+                "canonical_grouping_key",
+                _identifier(self.canonical_grouping_key, "canonical grouping key"),
+            )
+        # quality 是由目前 public fields 計算的 diagnostic；不接受 stale caller
+        # 值，避免 dataclasses.replace() 修改 description 後仍保留舊品質。
+        quality = classify_metadata_quality(
+            name=None if self.display_name == self.provider_id else self.display_name,
+            description=self.description,
+            summaries=tuple(
+                value
+                for tool in self.callable_tools
+                for value in (getattr(tool, "title", None), getattr(tool, "description", None))
+            ),
+        )
+        object.__setattr__(self, "metadata_quality", quality)
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, object]) -> "SupportingProviderDeclaration":
@@ -472,6 +563,12 @@ class SupportingProviderDeclaration:
             "display_name",
             "presence_state",
             "explicit_negative_reason",
+            "discovery_evidence_state",
+            "existence_evidence_state",
+            "raw_external_identity",
+            "canonical_grouping_key",
+            "metadata_quality",
+            "hierarchy_state",
         }
         if set(payload) - allowed:
             raise ValueError("supporting provider declaration has unsupported fields")
@@ -490,6 +587,14 @@ class SupportingProviderDeclaration:
             display_name=payload.get("display_name"),  # type: ignore[arg-type]
             presence_state=payload.get("presence_state", "PRESENT"),  # type: ignore[arg-type]
             explicit_negative_reason=payload.get("explicit_negative_reason"),  # type: ignore[arg-type]
+            discovery_evidence_state=payload.get("discovery_evidence_state", "DISCOVERED_TRUSTED"),  # type: ignore[arg-type]
+            existence_evidence_state=payload.get(
+                "existence_evidence_state", ExistenceEvidenceState.RUNTIME_ENTITY_PRESENT
+            ),  # type: ignore[arg-type]
+            raw_external_identity=payload.get("raw_external_identity"),  # type: ignore[arg-type]
+            canonical_grouping_key=payload.get("canonical_grouping_key"),  # type: ignore[arg-type]
+            metadata_quality=payload.get("metadata_quality"),  # type: ignore[arg-type]
+            hierarchy_state=payload.get("hierarchy_state"),  # type: ignore[arg-type]
         )
 
     @property
@@ -507,7 +612,7 @@ class SupportingProviderDeclaration:
     def to_mapping(self) -> dict[str, object]:
         """輸出 public provider declaration。"""
 
-        return {
+        result: dict[str, object] = {
             "provider_id": self.provider_id,
             "kind": self.kind,
             "host_identity": self.host_identity,
@@ -519,7 +624,17 @@ class SupportingProviderDeclaration:
             "provenance": list(self.provenance),
             "presence_state": self.presence_state,
             "explicit_negative_reason": self.explicit_negative_reason,
+            "discovery_evidence_state": self.discovery_evidence_state,
+            "existence_evidence_state": self.existence_evidence_state.value,
+            "metadata_quality": self.metadata_quality.value,
         }
+        if self.raw_external_identity is not None:
+            result["raw_external_identity"] = self.raw_external_identity
+        if self.canonical_grouping_key is not None:
+            result["canonical_grouping_key"] = self.canonical_grouping_key
+        if self.hierarchy_state is not None:
+            result["hierarchy_state"] = self.hierarchy_state
+        return result
 
 
 @dataclass(frozen=True)
@@ -848,6 +963,12 @@ class ProviderDigest:
     display_name: str = "provider"
     presence_state: str = "PRESENT"
     readiness_state: str = "PRESENT_UNVERIFIED"
+    discovery_evidence_state: str = "DISCOVERED_TRUSTED"
+    existence_evidence_state: ExistenceEvidenceState = ExistenceEvidenceState.RUNTIME_ENTITY_PRESENT
+    metadata_quality: MetadataQuality = MetadataQuality.OPAQUE
+    raw_external_identity: str | None = None
+    canonical_grouping_key: str | None = None
+    hierarchy_state: str | None = None
 
     def __post_init__(self) -> None:
         """驗證 digest fingerprint 與 public provider metadata。"""
@@ -855,7 +976,12 @@ class ProviderDigest:
         object.__setattr__(self, "provider_id", _identifier(self.provider_id, "provider id"))
         if self.kind not in FORMAL_SUPPORTING_PROVIDER_KINDS:
             raise ValueError("provider digest requires a formal provider kind")
-        object.__setattr__(self, "display_name", _safe_text(self.display_name, "provider display name", 512))
+        if self.hierarchy_state is not None:
+            if self.hierarchy_state not in {"KNOWN", "UNKNOWN"}:
+                raise ValueError("unsupported provider hierarchy state")
+            if self.kind == "host_tool" and self.hierarchy_state != "UNKNOWN":
+                raise ValueError("host_tool requires UNKNOWN hierarchy state")
+        object.__setattr__(self, "display_name", _safe_public_label(self.display_name, "provider display name", 512))
         object.__setattr__(self, "description", _nullable_text(self.description, "provider description", 1024))
         object.__setattr__(self, "callable_tools", _tool_tuple(self.callable_tools))
         object.__setattr__(self, "provenance", _provenance(self.provenance))
@@ -863,17 +989,39 @@ class ProviderDigest:
             raise ValueError("provider digest has an unsupported presence state")
         if self.readiness_state not in PROVIDER_READINESS_STATES:
             raise ValueError("provider digest has an unsupported readiness state")
+        if self.discovery_evidence_state not in DISCOVERY_EVIDENCE_STATES:
+            raise ValueError("provider digest has an unsupported discovery evidence state")
+        if not isinstance(self.existence_evidence_state, ExistenceEvidenceState):
+            try:
+                object.__setattr__(self, "existence_evidence_state", ExistenceEvidenceState(self.existence_evidence_state))
+            except ValueError as error:
+                raise ValueError("provider digest has an unsupported existence evidence state") from error
+        if not isinstance(self.metadata_quality, MetadataQuality):
+            try:
+                object.__setattr__(self, "metadata_quality", MetadataQuality(self.metadata_quality))
+            except ValueError as error:
+                raise ValueError("provider digest has an unsupported metadata quality") from error
+        if self.raw_external_identity is not None:
+            object.__setattr__(
+                self,
+                "raw_external_identity",
+                _safe_public_label(self.raw_external_identity, "raw external identity", 512),
+            )
+        if self.canonical_grouping_key is not None:
+            object.__setattr__(
+                self,
+                "canonical_grouping_key",
+                _identifier(self.canonical_grouping_key, "canonical grouping key"),
+            )
         if self.presence_state != "PRESENT":
             raise ValueError("provider digest requires PRESENT state")
-        if self.readiness_state == "KNOWN_UNAVAILABLE":
-            raise ValueError("known unavailable providers cannot have a digest")
         if _FINGERPRINT.fullmatch(self.fingerprint) is None:
             raise ValueError("provider digest requires a SHA-256 fingerprint")
 
     def to_mapping(self) -> dict[str, object]:
         """輸出 digest public projection，不產生 semantic fields。"""
 
-        return {
+        result: dict[str, object] = {
             "provider_id": self.provider_id,
             "kind": self.kind,
             "display_name": self.display_name,
@@ -883,7 +1031,17 @@ class ProviderDigest:
             "fingerprint": self.fingerprint,
             "presence_state": self.presence_state,
             "readiness_state": self.readiness_state,
+            "discovery_evidence_state": self.discovery_evidence_state,
+            "existence_evidence_state": self.existence_evidence_state.value,
+            "metadata_quality": self.metadata_quality.value,
         }
+        if self.raw_external_identity is not None:
+            result["raw_external_identity"] = self.raw_external_identity
+        if self.canonical_grouping_key is not None:
+            result["canonical_grouping_key"] = self.canonical_grouping_key
+        if self.hierarchy_state is not None:
+            result["hierarchy_state"] = self.hierarchy_state
+        return result
 
 
 @dataclass(frozen=True)
@@ -902,9 +1060,37 @@ class SupportingMetrics:
     present_unverified_count: int | None = None
     metadata_insufficient_count: int | None = None
     explicit_negative_count: int | None = None
+    metadata_sufficient_count: int | None = None
+    metadata_sparse_count: int | None = None
+    metadata_opaque_count: int | None = None
+    identity_unresolved_count: int | None = None
+    semantically_considered_count: int = 0
+    plausible_count: int = 0
+    never_considered_count: int = 0
+    sweep_batch_count: int = 0
+    sweep_fingerprint: str | None = None
+    host_snapshot_capability_count: int = 0
+    host_snapshot_builtin_count: int = 0
+    host_snapshot_app_child_count: int = 0
+    host_snapshot_mcp_child_count: int = 0
+    host_snapshot_unclassified_count: int = 0
+    host_snapshot_id: str | None = None
+    host_snapshot_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
         """驗證 lazy run state 與未選擇 contract。"""
+
+        # 舊版直接建立 metrics 的呼叫沒有 sweep 欄位；現有 selectable
+        # digests 視為已進入舊 contract 的 consideration，保持相容。
+        if (
+            self.run_state == "ran"
+            and self.selectable_count
+            and self.semantically_considered_count == 0
+            and self.plausible_count == 0
+            and self.never_considered_count == 0
+            and self.sweep_fingerprint is None
+        ):
+            object.__setattr__(self, "semantically_considered_count", self.selectable_count)
 
         if self.run_state not in _RUN_STATES:
             raise ValueError("unsupported supporting metrics run_state")
@@ -924,6 +1110,10 @@ class SupportingMetrics:
             "present_unverified_count": 0,
             "metadata_insufficient_count": 0,
             "explicit_negative_count": 0,
+            "metadata_sufficient_count": 0,
+            "metadata_sparse_count": 0,
+            "metadata_opaque_count": 0,
+            "identity_unresolved_count": 0,
         }
         for field_name, default in defaults.items():
             value = getattr(self, field_name)
@@ -945,6 +1135,39 @@ class SupportingMetrics:
             raise ValueError("readiness counts must account for every selectable provider")
         if self.selected_count != 0:
             raise ValueError("Phase 3 selected_count must remain zero")
+        if self.semantically_considered_count > self.selectable_count:
+            raise ValueError("semantically_considered_count cannot exceed selectable_count")
+        if self.plausible_count > self.semantically_considered_count:
+            raise ValueError("plausible_count cannot exceed semantically_considered_count")
+        if self.never_considered_count > self.selectable_count:
+            raise ValueError("never_considered_count cannot exceed selectable_count")
+        if self.semantically_considered_count + self.never_considered_count != self.selectable_count:
+            raise ValueError("Provider sweep counts must account for every selectable provider")
+        if self.sweep_fingerprint is not None and _FINGERPRINT.fullmatch(self.sweep_fingerprint) is None:
+            raise ValueError("sweep_fingerprint must be a SHA-256 digest or null")
+        for field_name in (
+            "host_snapshot_capability_count",
+            "host_snapshot_builtin_count",
+            "host_snapshot_app_child_count",
+            "host_snapshot_mcp_child_count",
+            "host_snapshot_unclassified_count",
+        ):
+            value = getattr(self, field_name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{field_name} must be a non-negative integer")
+        if sum(
+            (
+                self.host_snapshot_builtin_count,
+                self.host_snapshot_app_child_count,
+                self.host_snapshot_mcp_child_count,
+                self.host_snapshot_unclassified_count,
+            )
+        ) > self.host_snapshot_capability_count:
+            raise ValueError("Host snapshot hierarchy counts exceed capability count")
+        if self.host_snapshot_id is not None and not isinstance(self.host_snapshot_id, str):
+            raise ValueError("host_snapshot_id must be text or null")
+        if self.host_snapshot_fingerprint is not None and _FINGERPRINT.fullmatch(self.host_snapshot_fingerprint) is None:
+            raise ValueError("host_snapshot_fingerprint must be a SHA-256 digest or null")
         if not isinstance(self.detail_expansion_used, bool):
             raise ValueError("detail_expansion_used must be boolean")
         if self.run_state == "not_run" and any(
@@ -960,14 +1183,29 @@ class SupportingMetrics:
                 self.present_unverified_count,
                 self.metadata_insufficient_count,
                 self.explicit_negative_count,
+                self.metadata_sufficient_count,
+                self.metadata_sparse_count,
+                self.metadata_opaque_count,
+                self.identity_unresolved_count,
+                self.semantically_considered_count,
+                self.plausible_count,
+                self.never_considered_count,
+                self.sweep_batch_count,
+                self.host_snapshot_capability_count,
+                self.host_snapshot_builtin_count,
+                self.host_snapshot_app_child_count,
+                self.host_snapshot_mcp_child_count,
+                self.host_snapshot_unclassified_count,
             )
         ):
             raise ValueError("not_run metrics must contain zero counts")
+        if self.run_state == "not_run" and (self.host_snapshot_id is not None or self.host_snapshot_fingerprint is not None):
+            raise ValueError("not_run metrics must not contain a Host snapshot")
 
     def to_mapping(self) -> dict[str, object]:
         """輸出 metrics mapping。"""
 
-        return {
+        result: dict[str, object] = {
             "run_state": self.run_state,
             "discovered_count": self.discovered_count,
             "hard_eligible_count": self.hard_eligible_count,
@@ -981,6 +1219,35 @@ class SupportingMetrics:
             "metadata_insufficient_count": self.metadata_insufficient_count,
             "explicit_negative_count": self.explicit_negative_count,
         }
+        if self.run_state == "ran":
+            result.update(
+                {
+                    "metadata_sufficient_count": self.metadata_sufficient_count,
+                    "metadata_sparse_count": self.metadata_sparse_count,
+                    "metadata_opaque_count": self.metadata_opaque_count,
+                    "identity_unresolved_count": self.identity_unresolved_count,
+                    "provider_discovered_total": self.discovered_count,
+                    "provider_present_total": self.present_count,
+                    "provider_metadata_sufficient_total": self.metadata_sufficient_count,
+                    "provider_metadata_sparse_total": self.metadata_sparse_count,
+                    "provider_metadata_opaque_total": self.metadata_opaque_count,
+                    "provider_identity_unresolved_total": self.identity_unresolved_count,
+                    "provider_semantically_considered_total": self.semantically_considered_count,
+                    "provider_plausible_total": self.plausible_count,
+                    "provider_selected_total": self.selected_count,
+                    "provider_never_considered_total": self.never_considered_count,
+                    "sweep_batch_count": self.sweep_batch_count,
+                    "sweep_fingerprint": self.sweep_fingerprint,
+                    "host_snapshot_capability_count": self.host_snapshot_capability_count,
+                    "host_snapshot_builtin_count": self.host_snapshot_builtin_count,
+                    "host_snapshot_app_child_count": self.host_snapshot_app_child_count,
+                    "host_snapshot_mcp_child_count": self.host_snapshot_mcp_child_count,
+                    "host_snapshot_unclassified_count": self.host_snapshot_unclassified_count,
+                    "host_snapshot_id": self.host_snapshot_id,
+                    "host_snapshot_fingerprint": self.host_snapshot_fingerprint,
+                }
+            )
+        return result
 
 
 @dataclass(frozen=True)
@@ -1089,6 +1356,46 @@ def validate_supporting_final_selection_payload(value: object) -> SupportingFina
     """驗證 decision payload 內的 final_supporting_decision 結構。"""
 
     return _parse_final_selection(value)
+
+
+def validate_supporting_coverage_additions(
+    payload: object,
+    *,
+    candidate_ids: Sequence[str],
+    selected_ids: Sequence[str] = (),
+    execution_needs: Sequence[ExecutionNeed | Mapping[str, object]],
+) -> tuple[SupportingCoverageAddition, ...]:
+    """驗證唯一 Supporting Coverage Check 的 additions，不判斷 Provider 語意。"""
+
+    if isinstance(payload, Mapping):
+        if set(payload) != {"additions"}:
+            raise ValueError("supporting coverage additions wrapper has an invalid schema")
+        payload = payload["additions"]
+    if not isinstance(payload, Sequence) or isinstance(payload, (str, bytes)):
+        raise ValueError("supporting coverage additions must be a list")
+
+    candidates = {_identifier(item, "coverage candidate provider id") for item in candidate_ids}
+    selected = {_identifier(item, "coverage selected provider id") for item in selected_ids}
+    need_ids = {item.need for item in _execution_needs(execution_needs)}
+    result: list[SupportingCoverageAddition] = []
+    seen: set[str] = set()
+    for item in payload:
+        if not isinstance(item, Mapping) or set(item) != {"provider_id", "execution_need", "distinct_value"}:
+            raise ValueError("supporting coverage addition has an invalid schema")
+        addition = SupportingCoverageAddition(
+            provider_id=item["provider_id"],  # type: ignore[arg-type]
+            execution_need=item["execution_need"],  # type: ignore[arg-type]
+            distinct_value=item["distinct_value"],  # type: ignore[arg-type]
+        )
+        if addition.provider_id not in candidates:
+            raise ValueError("supporting coverage addition must reference a current selectable provider")
+        if addition.provider_id in selected or addition.provider_id in seen:
+            raise ValueError("supporting coverage additions must contain unselected unique providers")
+        if addition.execution_need not in need_ids:
+            raise ValueError("supporting coverage addition must reference an original execution need")
+        seen.add(addition.provider_id)
+        result.append(addition)
+    return tuple(result)
 
 
 def normalize_execution_needs(
@@ -1209,8 +1516,16 @@ def prepare_supporting_context(
     *,
     provider_declarations: Sequence[SupportingProviderDeclaration | Mapping[str, object]] = (),
     readiness_evidence: Sequence[ReadinessEvidenceCertificate | AppReadinessEvidence | McpReadinessEvidence] = (),
+    host_capability_snapshot: HostCapabilitySnapshot | None = None,
+    host_native_registry: Sequence[Mapping[str, object]] | Mapping[str, object] = (),
+    plugin_manifests: Sequence[Mapping[str, object]] = (),
 ) -> SupportingRouteContext:
-    """準備 Supporting context；不呼叫 Provider、LLM、Receipt 或 production route。"""
+    """準備 Supporting context；不呼叫 Provider、LLM、Receipt 或 production route。
+
+    `host_capability_snapshot` 必須是 controller-owned trusted envelope 正規化後的
+    `HostCapabilitySnapshot`；legacy `host_native_registry` 與 `plugin_manifests`
+    仍可供既有 adapter compatibility 使用。
+    """
 
     # lazy: execution_needs 為空時，在任何 Provider input 被讀取前立即返回 not_run。
     if isinstance(execution_needs, (str, bytes)) or not isinstance(execution_needs, Sequence):
@@ -1220,11 +1535,44 @@ def prepare_supporting_context(
         return SupportingRouteContext((), (), (), (), metrics, _context_fingerprint((), (), (), (), metrics))
 
     needs = _execution_needs(execution_needs)
+    from .provider_adapters import _merge_declaration_into
+
+    evidence = tuple(_validate_readiness_evidence(item) for item in readiness_evidence)
     declarations = tuple(
         item if isinstance(item, SupportingProviderDeclaration) else SupportingProviderDeclaration.from_mapping(item)
         for item in provider_declarations
     )
-    evidence = tuple(_validate_readiness_evidence(item) for item in readiness_evidence)
+    discovered_inventory = None
+    if host_capability_snapshot is not None or host_native_registry or plugin_manifests:
+        from .provider_adapters import discover_provider_inventory
+
+        discovered_inventory = discover_provider_inventory(
+            host_capability_snapshot=host_capability_snapshot,
+            host_native_registry=host_native_registry,
+            plugin_manifests=plugin_manifests,
+        )
+        declarations = (*declarations, *discovered_inventory.provider_declarations)
+    certified_before_merge = {
+        (certificate.kind, certificate.provider_id)
+        for certificate in evidence
+        if isinstance(certificate, ReadinessEvidenceCertificate)
+        and any(
+            (declaration.kind, declaration.provider_id) == (certificate.kind, certificate.provider_id)
+            and _matches_certificate(declaration, certificate)
+            for declaration in declarations
+        )
+    }
+    exact_declarations: dict[tuple[str, str], SupportingProviderDeclaration] = {}
+    for declaration in declarations:
+        key = (declaration.kind, declaration.provider_id)
+        previous = exact_declarations.get(key)
+        if previous is None:
+            exact_declarations[key] = declaration
+        elif declaration.kind in FORMAL_SUPPORTING_PROVIDER_KINDS:
+            _merge_declaration_into(exact_declarations, declaration)
+        elif previous.to_mapping() != declaration.to_mapping():
+            raise ValueError("supporting Provider identity has conflicting non-formal metadata")
+    declarations = tuple(exact_declarations.values())
     evidence_by_key = {(item.provider_id, item.kind): item for item in evidence}
     eligible: list[
         tuple[
@@ -1237,6 +1585,10 @@ def prepare_supporting_context(
     ] = []
     present_count = 0
     metadata_insufficient_count = 0
+    metadata_sufficient_count = 0
+    metadata_sparse_count = 0
+    metadata_opaque_count = 0
+    identity_unresolved_count = 0
     explicit_negative_count = 0
     for declaration in sorted(declarations, key=lambda item: (item.provider_id.casefold(), item.provider_id, item.kind)):
         if declaration.kind not in FORMAL_SUPPORTING_PROVIDER_KINDS:
@@ -1245,25 +1597,32 @@ def prepare_supporting_context(
         if declaration.presence_state != "PRESENT":
             explicit_negative_count += 1
             continue
+        if declaration.existence_evidence_state == ExistenceEvidenceState.DECLARATION_ONLY:
+            identity_unresolved_count += 1
+            continue
         present_count += 1
         callable_tools = _usable_tools(declaration.callable_tools)
         if declaration.explicit_negative_reason is not None:
+            # Provider readiness/negative evidence 只供 execution diagnostics；
+            # declaration 仍可進 semantic candidate，只要 metadata 足夠。
             explicit_negative_count += 1
-            continue
         certificate = evidence_by_key.get((declaration.provider_id, declaration.kind))
         if certificate is not None and _certificate_is_explicit_negative(certificate):
             explicit_negative_count += 1
-            continue
-        readiness_state = _provider_readiness_state(declaration, certificate)
-        if readiness_state == "KNOWN_UNAVAILABLE":
-            explicit_negative_count += 1
-            continue
-        if not _has_sufficient_capability_metadata(declaration, callable_tools):
+        readiness_state = _provider_readiness_state(
+            declaration,
+            certificate,
+            certified_before_merge=(declaration.kind, declaration.provider_id) in certified_before_merge,
+        )
+        quality = declaration.metadata_quality
+        if quality == MetadataQuality.SUFFICIENT:
+            metadata_sufficient_count += 1
+        elif quality == MetadataQuality.SPARSE:
+            metadata_sparse_count += 1
+        else:
+            metadata_opaque_count += 1
+        if quality != MetadataQuality.SUFFICIENT:
             metadata_insufficient_count += 1
-            continue
-        if not declaration.callable_exposure:
-            explicit_negative_count += 1
-            continue
         include_evidence = certificate is not None and (
             isinstance(certificate, (AppReadinessEvidence, McpReadinessEvidence))
             or _matches_certificate(declaration, certificate)
@@ -1288,7 +1647,13 @@ def prepare_supporting_context(
         if certificate is not None and include_evidence
     )
     verified_ready_count = sum(item.readiness_state == "VERIFIED_READY" for item in digests)
-    present_unverified_count = sum(item.readiness_state == "PRESENT_UNVERIFIED" for item in digests)
+    # Compatibility counter：除 VERIFIED_READY 外的所有 present digest 都屬於
+    # unverified execution readiness，包含 KNOWN_UNAVAILABLE。
+    present_unverified_count = sum(item.readiness_state != "VERIFIED_READY" for item in digests)
+    provider_sweep = build_inventory_sweep(
+        tuple(provider_digest(item) for item in digests),
+        identity_field="provider_id",
+    )
     metrics = SupportingMetrics(
         run_state="ran",
         discovered_count=len(declarations),
@@ -1305,6 +1670,34 @@ def prepare_supporting_context(
         present_unverified_count=present_unverified_count,
         metadata_insufficient_count=metadata_insufficient_count,
         explicit_negative_count=explicit_negative_count,
+        metadata_sufficient_count=metadata_sufficient_count,
+        metadata_sparse_count=metadata_sparse_count,
+        metadata_opaque_count=metadata_opaque_count,
+        identity_unresolved_count=identity_unresolved_count,
+        semantically_considered_count=len(provider_sweep.considered_ids),
+        plausible_count=0,
+        never_considered_count=len(provider_sweep.never_considered_ids),
+        sweep_batch_count=provider_sweep.batch_count,
+        sweep_fingerprint=provider_sweep.fingerprint,
+        host_snapshot_capability_count=(
+            0 if discovered_inventory is None else discovered_inventory.host_snapshot_capability_count
+        ),
+        host_snapshot_builtin_count=(
+            0 if discovered_inventory is None else discovered_inventory.host_snapshot_builtin_count
+        ),
+        host_snapshot_app_child_count=(
+            0 if discovered_inventory is None else discovered_inventory.host_snapshot_app_child_count
+        ),
+        host_snapshot_mcp_child_count=(
+            0 if discovered_inventory is None else discovered_inventory.host_snapshot_mcp_child_count
+        ),
+        host_snapshot_unclassified_count=(
+            0 if discovered_inventory is None else discovered_inventory.host_snapshot_unclassified_count
+        ),
+        host_snapshot_id=(None if discovered_inventory is None else discovered_inventory.host_snapshot_id),
+        host_snapshot_fingerprint=(
+            None if discovered_inventory is None else discovered_inventory.host_snapshot_fingerprint
+        ),
     )
     fingerprint = _context_fingerprint(needs, matched_evidence, digests, references, metrics)
     return SupportingRouteContext(needs, matched_evidence, digests, references, metrics, fingerprint)
@@ -1361,7 +1754,7 @@ def _build_digest(
     readiness_state: str,
     callable_tools: Sequence[SupportingTool],
 ) -> ProviderDigest:
-    """對有足夠 metadata 且未被 explicit negative 排除的 Provider 建立 digest。"""
+    """對存在且 identity 已解析的 Provider 建立 digest，不以 metadata/readiness 排除。"""
 
     payload = {
         "provider_id": declaration.provider_id,
@@ -1372,7 +1765,12 @@ def _build_digest(
         "readiness_evidence_fingerprint": None if certificate is None else certificate.fingerprint,
         "presence_state": declaration.presence_state,
         "readiness_state": readiness_state,
+        "discovery_evidence_state": declaration.discovery_evidence_state,
         "provenance": list(declaration.provenance),
+        "metadata_quality": declaration.metadata_quality.value,
+        "raw_external_identity": declaration.raw_external_identity,
+        "canonical_grouping_key": declaration.canonical_grouping_key,
+        "hierarchy_state": declaration.hierarchy_state,
     }
     return ProviderDigest(
         provider_id=declaration.provider_id,
@@ -1384,31 +1782,35 @@ def _build_digest(
         display_name=declaration.display_name or declaration.provider_id,
         presence_state=declaration.presence_state,
         readiness_state=readiness_state,
+        discovery_evidence_state=declaration.discovery_evidence_state,
+        existence_evidence_state=declaration.existence_evidence_state,
+        metadata_quality=declaration.metadata_quality,
+        raw_external_identity=declaration.raw_external_identity,
+        canonical_grouping_key=declaration.canonical_grouping_key,
+        hierarchy_state=declaration.hierarchy_state,
     )
 
 
 def _usable_tools(value: Sequence[SupportingTool]) -> tuple[SupportingTool, ...]:
-    """只保留 Host 明確標示可用的 tool summary；不推導 disabled tool capability。"""
+    """保留所有可讀 tool summary；enabled 只留作 execution readiness。"""
 
-    return tuple(
-        tool
-        for tool in value
-        if not isinstance(tool, SupportingToolSummary)
-        or (tool.is_enabled and tool.disabled_reason is None)
-    )
+    return tuple(value)
 
 
 def _has_sufficient_capability_metadata(
     declaration: SupportingProviderDeclaration,
     callable_tools: Sequence[SupportingTool],
 ) -> bool:
-    """確認 public name/description 與至少一個 tool summary 足以交給 LLM。"""
+    """確認 Provider name 加 description 或 tool summary 足以交給 LLM。"""
 
-    return bool(
-        (declaration.display_name or declaration.description)
-        and callable_tools
-        and all(bool(tool.description.strip()) for tool in callable_tools)
+    # Provider presence/readiness 與語意理解分開；description 足夠時不要求
+    # callable tool detail，具備 title/description 的 tool summary 也可提供最低語意。
+    provider_description = declaration.description is not None and bool(declaration.description.strip())
+    tool_summary = any(
+        bool(getattr(tool, "description", "").strip()) or bool(getattr(tool, "title", None))
+        for tool in callable_tools
     )
+    return provider_description or tool_summary
 
 
 def _certificate_is_explicit_negative(
@@ -1422,12 +1824,25 @@ def _certificate_is_explicit_negative(
 def _provider_readiness_state(
     declaration: SupportingProviderDeclaration,
     certificate: ReadinessEvidenceCertificate | AppReadinessEvidence | McpReadinessEvidence | None,
+    *,
+    certified_before_merge: bool = False,
 ) -> str:
-    """將 typed readiness evidence 正規化為 ready 或 present-unverified。"""
+    """將 typed readiness evidence 正規化為 ready 或 present-unverified。
+
+    `certified_before_merge` 表示 exact certificate 已在多來源 merge 前驗證成功；
+    merge 只增加 discovery/metadata provenance，不會使較強 runtime evidence 消失。
+    """
 
     if certificate is None:
         return "PRESENT_UNVERIFIED"
+    if isinstance(certificate, ReadinessEvidenceCertificate) and certified_before_merge:
+        return "VERIFIED_READY"
     if isinstance(certificate, (AppReadinessEvidence, McpReadinessEvidence)):
+        if (
+            certificate.readiness_state == "VERIFIED_READY"
+            and (not declaration.callable_exposure or not declaration.callable_tools)
+        ):
+            return "PRESENT_UNVERIFIED"
         return certificate.readiness_state
     return "VERIFIED_READY" if _matches_certificate(declaration, certificate) else "PRESENT_UNVERIFIED"
 
@@ -1527,6 +1942,20 @@ def _identifier(value: object, field: str) -> str:
     return value.strip()
 
 
+def canonicalize_external_identity(raw_external_identity: object, namespace: str) -> str:
+    """將外部 identity 轉成 collision-safe internal grouping key。
+
+    外部值只保存作 provenance；Router 的 canonical validator 仍維持原本嚴格
+    規則。SHA-256 key 不做 semantic normalization，因此 `foo@bar` 與
+    `foo-bar` 不會因字串替換而意外合併。
+    """
+
+    raw = _safe_text(raw_external_identity, "raw external identity", 512)
+    prefix = _identifier(namespace, "canonical grouping namespace")
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return f"{prefix}-{digest}"
+
+
 def _identifier_tuple(value: Sequence[str], field: str) -> tuple[str, ...]:
     """驗證並 deterministic sort identifier sequence。"""
 
@@ -1564,6 +1993,25 @@ def _safe_text(value: object, field: str, maximum: int) -> str:
         or PurePosixPath(result).is_absolute()
     ):
         raise ValueError(f"{field} must be bounded public text")
+    return result
+
+
+def _safe_public_label(value: object, field: str, maximum: int) -> str:
+    """驗證 public label/identity；允許含保留字的穩定 tool ID，不允許 secret assignment。"""
+
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be text")
+    result = value.strip()
+    if (
+        not result
+        or len(result) > maximum
+        or "\x00" in result
+        or PureWindowsPath(result).is_absolute()
+        or PurePosixPath(result).is_absolute()
+    ):
+        raise ValueError(f"{field} must be bounded public text")
+    if _SENSITIVE.search(result) and _PUBLIC_ID.fullmatch(result) is None:
+        raise ValueError(f"{field} must not contain secret-like content")
     return result
 
 

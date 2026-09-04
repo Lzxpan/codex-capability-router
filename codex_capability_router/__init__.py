@@ -32,8 +32,39 @@
 # 原始內容：package exports 只包含 hard-ready Supporting context 與 readiness evidence。
 # 修改原因：Optimistic Supporting Provider Selection Upgrade 需要公開 typed presence/readiness states 與 execution outcome record。
 # 修改後功能：公開 Provider state constants、PRESENT_UNVERIFIED digest 與獨立 ExecutionAttempt；不新增 Provider endpoint 或第二套路由。
+# 修改紀錄（2026-09-01，Steve Peng）
+# 原始內容：package 沒有 Supporting Coverage Check 的 public addition contract。
+# 修改原因：multi-Provider selection 需要以 execution need 與 distinct value 保留 bounded 補選證據。
+# 修改後功能：公開 SupportingCoverageAddition 與 validator；不新增 semantic provider ranking 或 execution。
 
-__version__ = "0.2.0-beta.1"
+# 修改紀錄（2026-09-02，Steve Peng）
+# 原始內容：__version__ = "0.2.0-beta.1"。
+# 修改原因：v0.2.0-beta.2 修正 discovery source semantics 與 blind inventory integrity。
+# 修改後功能：公開 v0.2.0-beta.2 development version；保留 beta.1 historical references。
+# 修改紀錄（2026-09-02，Steve Peng）
+# 原始內容：__version__ = "0.2.0-beta.2"。
+# 修改原因：beta.3 修正 live discovery schema、Plugin identity contract 與 existence-only consideration。
+# 修改後功能：公開 v0.2.0-beta.3 development version；保留 beta.1/beta.2 historical references。
+# 修改紀錄（2026-09-02，Steve Peng）
+# 原始內容：__version__ = "0.2.0-beta.3"。
+# 修改原因：beta.4 將 unknown Host hierarchy 轉為可 consideration 的 host_tool fallback。
+# 修改後功能：公開 v0.2.0-beta.4 development version；保留 beta.1/beta.2/beta.3 historical references。
+# 修改紀錄（2026-09-03，Steve Peng）
+# 原始內容：__version__ = "0.2.0-beta.4"。
+# 修改原因：beta.5 收斂 authoritative-path discovery 與 declared-capability retention。
+# 修改後功能：公開 v0.2.0-beta.5 development version；保留 beta.1/beta.2/beta.3/beta.4 historical references。
+# 修改紀錄（2026-09-03，Steve Peng）
+# 原始內容：__version__ = "0.2.0-beta.5"。
+# 修改原因：beta.6 補上 logical Plugin 到官方 PluginStore root 的 bounded resolution。
+# 修改後功能：公開 v0.2.0-beta.6 development version；保留 beta.1-beta.5 historical references。
+# 修改紀錄（2026-09-03，Steve Peng）
+# 原始內容：__version__ = "0.2.0-beta.7"。
+# 修改原因：beta.8 清理 Skill semantic selection 的保守 redundancy/materiality wording。
+# 修改後功能：公開 v0.2.0-beta.8 development version；Host/App/MCP/Provider semantics 不變。
+# 修改紀錄（2026-09-04，Codex）
+# 修改原因：beta.9 修正 canonical Skill 多 physical source 的 handoff freshness 綁定。
+# 修改後功能：公開 v0.2.0-beta.9 version；selection/discovery semantics 不變。
+__version__ = "0.2.0-beta.9"
 
 from .registry import classify_capability, deduplicate_registry
 from .host_exposure import (
@@ -49,11 +80,22 @@ from .route_context import (
     prepare_route_context,
     validate_decision_payloads,
 )
-from .routing import SelectionRouteInput, route
+from .host_snapshot import (
+    HOST_SNAPSHOT_CONTRACT_VERSION,
+    HOST_SNAPSHOT_PROVENANCE,
+    HOST_SNAPSHOT_TRUST_MARKER,
+    HostCapability,
+    HostCapabilitySnapshot,
+    prepare_host_capability_snapshot,
+)
+from .existence import ExistenceEvidence, ExistenceEvidenceState, MetadataQuality, classify_metadata_quality
+from .selection import prepare_high_recall_selection
+from .routing import SelectionRouteInput, prepare_route_input_from_controller_registry, route
 from .supporting_context import (
     FORMAL_SUPPORTING_PROVIDER_KINDS,
     EXECUTION_OUTCOMES,
     PROVIDER_METADATA_STATES,
+    DISCOVERY_EVIDENCE_STATES,
     PROVIDER_PRESENCE_STATES,
     PROVIDER_READINESS_STATES,
     AppReadinessEvidence,
@@ -64,6 +106,7 @@ from .supporting_context import (
     ProviderDetailReference,
     ReadinessEvidenceCertificate,
     SupportingCapabilitySelection,
+    SupportingCoverageAddition,
     SupportingDecisionPayload,
     SupportingDetailRequest,
     SupportingFinalSelection,
@@ -71,11 +114,13 @@ from .supporting_context import (
     SupportingRouteContext,
     SupportingToolDeclaration,
     SupportingToolSummary,
+    canonicalize_external_identity,
     UnmetExecutionNeed,
     normalize_execution_needs,
     prepare_supporting_context,
     supporting_selection_status,
     validate_supporting_decision,
+    validate_supporting_coverage_additions,
     validate_supporting_final_selection_payload,
 )
 from .provider_adapters import (
@@ -87,7 +132,59 @@ from .provider_adapters import (
     ProviderAdapterInventory,
     adapt_official_app_inventory,
     adapt_official_mcp_inventory,
+    adapt_codex_mcp_cli_inventory,
     build_official_provider_requests,
+    HOST_NATIVE_REGISTRY_SOURCE,
+    ProviderDiscoveryInventory,
+    discover_active_plugin_children,
+    discover_host_capability_snapshot_inventory,
+    discover_host_native_provider_inventory,
+    discover_provider_inventory,
+)
+from .inventory_sweep import (
+    DEFAULT_SWEEP_BYTE_LIMIT,
+    DEFAULT_SWEEP_ITEM_LIMIT,
+    InventorySweep,
+    build_inventory_sweep,
+)
+from .discovery import (
+    DiscoveryRootPlan,
+    discover_plugin_skill_declarations,
+    discover_plugin_skill_root_specs,
+    discover_plugin_skill_roots,
+)
+from .skill_plan import (
+    KNOWN_SYSTEM_CHILD,
+    ROOT_KIND_FIXED_GLOBAL,
+    ROOT_KIND_FIXED_PROJECT,
+    ROOT_KIND_PLUGIN_DECLARED,
+    ROOT_KIND_RUNTIME_EXTRA,
+    RootPlanSnapshot,
+    SkillRootSpec,
+    build_skill_root_plan,
+)
+from .inventory import (
+    SelectedSkillRefreshResult,
+    SkillInventoryCache,
+    SkillInventorySnapshot,
+    SkillSourceBinding,
+    refresh_selected_skill_snapshot,
+    refresh_skill_inventory_snapshot,
+)
+from .plugin_store import (
+    PLUGIN_MANIFEST_RELATIVE_PATH,
+    PLUGIN_STORE_RELATIVE_ROOT,
+    PluginIdentity,
+    PluginRootResolution,
+    PluginStoreInventory,
+    PluginStoreMetrics,
+    resolve_plugin_store_inventory,
+)
+from .reconciliation import (
+    CurrentUiInventoryReference,
+    CurrentUiInventoryReconciliation,
+    UiInventoryCategory,
+    reconcile_current_ui_inventory,
 )
 from .task_analysis import TaskAnalysis, validate_task_analysis
 
@@ -103,21 +200,36 @@ __all__ = [
     "revalidate_host_exposure",
     "SelectionRouteInput",
     "route",
+    "prepare_route_input_from_controller_registry",
     "TaskAnalysis",
     "validate_task_analysis",
     "ValidatedDecisionPayloads",
     "prepare_route_context",
     "validate_decision_payloads",
+    "prepare_high_recall_selection",
+    "HostCapability",
+    "HostCapabilitySnapshot",
+    "prepare_host_capability_snapshot",
+    "HOST_SNAPSHOT_CONTRACT_VERSION",
+    "HOST_SNAPSHOT_PROVENANCE",
+    "HOST_SNAPSHOT_TRUST_MARKER",
+    "ExistenceEvidence",
+    "ExistenceEvidenceState",
+    "MetadataQuality",
+    "classify_metadata_quality",
+    "canonicalize_external_identity",
     "ExecutionNeed",
     "ExecutionAttempt",
     "FORMAL_SUPPORTING_PROVIDER_KINDS",
     "PROVIDER_PRESENCE_STATES",
     "PROVIDER_READINESS_STATES",
     "PROVIDER_METADATA_STATES",
+    "DISCOVERY_EVIDENCE_STATES",
     "EXECUTION_OUTCOMES",
     "AppReadinessEvidence",
     "McpReadinessEvidence",
     "SupportingCapabilitySelection",
+    "SupportingCoverageAddition",
     "UnmetExecutionNeed",
     "SupportingFinalSelection",
     "SupportingDetailRequest",
@@ -132,6 +244,7 @@ __all__ = [
     "prepare_supporting_context",
     "normalize_execution_needs",
     "validate_supporting_decision",
+    "validate_supporting_coverage_additions",
     "validate_supporting_final_selection_payload",
     "supporting_selection_status",
     "APP_LIST_METHOD",
@@ -142,5 +255,45 @@ __all__ = [
     "ProviderAdapterInventory",
     "adapt_official_app_inventory",
     "adapt_official_mcp_inventory",
+    "adapt_codex_mcp_cli_inventory",
     "build_official_provider_requests",
+    "HOST_NATIVE_REGISTRY_SOURCE",
+    "ProviderDiscoveryInventory",
+    "discover_active_plugin_children",
+    "discover_host_capability_snapshot_inventory",
+    "discover_host_native_provider_inventory",
+    "discover_provider_inventory",
+    "DEFAULT_SWEEP_BYTE_LIMIT",
+    "DEFAULT_SWEEP_ITEM_LIMIT",
+    "InventorySweep",
+    "build_inventory_sweep",
+    "CurrentUiInventoryReference",
+    "CurrentUiInventoryReconciliation",
+    "UiInventoryCategory",
+    "discover_plugin_skill_roots",
+    "discover_plugin_skill_root_specs",
+    "discover_plugin_skill_declarations",
+    "DiscoveryRootPlan",
+    "SkillRootSpec",
+    "RootPlanSnapshot",
+    "build_skill_root_plan",
+    "KNOWN_SYSTEM_CHILD",
+    "ROOT_KIND_FIXED_GLOBAL",
+    "ROOT_KIND_FIXED_PROJECT",
+    "ROOT_KIND_RUNTIME_EXTRA",
+    "ROOT_KIND_PLUGIN_DECLARED",
+    "SkillInventorySnapshot",
+    "SkillInventoryCache",
+    "SkillSourceBinding",
+    "SelectedSkillRefreshResult",
+    "refresh_selected_skill_snapshot",
+    "refresh_skill_inventory_snapshot",
+    "reconcile_current_ui_inventory",
+    "PLUGIN_MANIFEST_RELATIVE_PATH",
+    "PLUGIN_STORE_RELATIVE_ROOT",
+    "PluginIdentity",
+    "PluginRootResolution",
+    "PluginStoreInventory",
+    "PluginStoreMetrics",
+    "resolve_plugin_store_inventory",
 ]
