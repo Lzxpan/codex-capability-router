@@ -13,6 +13,7 @@ import unicodedata
 from .discovery import (
     _canonical_skill_id,
     _frontmatter,
+    _parse_skill_text,
     _skill_candidates,
     _skill_source_label,
     discover_plugin_skill_declarations,
@@ -560,8 +561,8 @@ def refresh_skill_inventory(
         metadata_sparse_count=metadata_sparse_count,
         metadata_opaque_count=metadata_opaque_count,
         identity_unresolved_count=identity_unresolved_count,
-        semantically_considered_count=len(present_profiles),
-        never_considered_count=0,
+        semantically_considered_count=0,
+        never_considered_count=len(present_profiles),
         discovery_metrics=_sum_discovery_metrics(root_result, plugin_root_result),
     )
 
@@ -631,6 +632,13 @@ def refresh_selected_skill_snapshot(
         break
     if selected_path is None or raw is None:
         raise ValueError("selected Skill instructions are unavailable")
+    record, diagnostic = _parse_skill_text(raw.decode("utf-8"), selected_path.parent, profile.source)
+    if (
+        diagnostic is not None or record is None or record.id != skill_id
+        or record.kind != CapabilityKind.SKILL or _is_controller(record) or record.routing_support
+        or (record.status != CapabilityStatus.UNKNOWN and record.status != profile.status)
+    ):
+        return SelectedSkillRefreshResult(snapshot, skill_id, 1, True)
     refreshed_binding = replace(
         binding,
         path=selected_path,
@@ -638,11 +646,15 @@ def refresh_selected_skill_snapshot(
     )
     refreshed_profile = replace(
         profile,
+        name=record.name,
+        description=record.description,
+        version=record.version,
+        metadata_quality=classify_metadata_quality(name=record.name, description=record.description),
         fingerprint=_fingerprint_fields(
             profile.id,
-            profile.name,
-            profile.description,
-            profile.version,
+            record.name,
+            record.description,
+            record.version,
             raw,
         ),
         stale=False,

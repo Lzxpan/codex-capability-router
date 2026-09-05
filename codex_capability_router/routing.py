@@ -603,6 +603,8 @@ class SelectionRouteInput:
     # beta.7 Skill plan/snapshot 由 controller/session lifecycle 建立；route 只重用 immutable snapshot。
     skill_root_plan: object | None = None
     skill_inventory_snapshot: object | None = None
+    skill_batch_decisions: tuple[Mapping[str, object], ...] = ()
+    supporting_batch_decisions: tuple[Mapping[str, object], ...] = ()
 
     def __post_init__(self) -> None:
         """驗證 production input 的 bounded containers 與明確 Skill roots。"""
@@ -756,6 +758,7 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
 
     # 延遲 import 避免 inventory/selection 的既有 controller hard gate 形成循環依賴。
     from .inventory import ProfileCache, refresh_skill_inventory, refresh_skill_inventory_snapshot
+    from .inventory_sweep import validate_sweep_decisions
     from .selection import (
         apply_correction,
         expanded_retrieve,
@@ -799,6 +802,8 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
     phase4 = request.validated_decision_payloads is not None
     if not phase4 and (
         request.coverage_additions
+        or request.skill_batch_decisions
+        or request.supporting_batch_decisions
         or request.coverage_check_used
         or request.possible_relevance_reasons is not None
         or request.possible_relevance_serialized_budget_bytes is not None
@@ -944,6 +949,8 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
                 for value in (request.supporting_context, request.supporting_selection)
             ) or request.supporting_provider_declarations or request.supporting_readiness_evidence or request.host_capability_snapshot is not None or request.host_native_provider_registry or request.plugin_manifests or request.supporting_detail_expansion_used or request.supporting_expanded_provider_tool_ids:
                 raise ValueError("Provider context/selection is forbidden when execution_needs is empty")
+            if request.supporting_batch_decisions:
+                raise ValueError("Provider decisions require execution needs")
             if decision_payloads.final_supporting_decision is not None:
                 raise ValueError("final supporting decision is forbidden when execution_needs is empty")
         else:
@@ -1056,6 +1063,20 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
         )
         supporting_metrics = supporting_context.metrics.to_mapping()
         selected_ids = {item["canonical_provider_id"] for item in selected_supporting}
+        provider_sweep = validate_sweep_decisions(
+            supporting_context.inventory_sweep, request.supporting_batch_decisions,
+            task_fingerprint=request.skill_context.context_fingerprint,
+            selected_ids=selected_ids,
+        )
+        supporting_metrics.update({
+            "provider_staged_total": len(provider_sweep.staged_ids),
+            "provider_decision_received_total": len(provider_sweep.decision_received_ids),
+            "provider_semantically_considered_total": len(provider_sweep.considered_ids),
+            "provider_never_considered_total": len(provider_sweep.never_considered_ids),
+            "provider_unresolved_total": len(provider_sweep.unresolved_ids),
+            "provider_semantic_coverage_status": "PARTIAL" if provider_sweep.unresolved_ids else "COMPLETE",
+            "decision_coverage": provider_sweep.to_mapping(),
+        })
         selected_provider_readiness = tuple(
             (
                 evidence.provider_id,
@@ -1115,6 +1136,11 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
                 request.possible_relevance_reasons,
                 budget_bytes=DEFAULT_POSSIBLE_RELEVANCE_SERIALIZED_BUDGET_BYTES,
             )
+        skill_sweep = validate_sweep_decisions(
+            working_preparation.inventory_sweep, request.skill_batch_decisions,
+            task_fingerprint=request.skill_context.context_fingerprint,
+            selected_ids=tuple(item["id"] for item in validated["selected_skills"]),
+        )
         skill_metrics = {
             "discovered_skill_count": len(inventory.profiles),
             "trusted_root_skill_count": len(inventory.trusted_root_skill_ids),
@@ -1132,18 +1158,15 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
             "skill_discovered_total": len(inventory.profiles),
             "skill_trusted_total": len(inventory.trusted_root_skill_ids),
             "skill_available_total": candidate_count,
-            "skill_semantically_considered_total": (
-                0
-                if working_preparation.inventory_sweep is None
-                else len(working_preparation.inventory_sweep.considered_ids)
-            ),
+            "skill_staged_total": len(skill_sweep.staged_ids),
+            "skill_decision_received_total": len(skill_sweep.decision_received_ids),
+            "skill_semantically_considered_total": len(skill_sweep.considered_ids),
+            "skill_unresolved_total": len(skill_sweep.unresolved_ids),
+            "skill_semantic_coverage_status": "PARTIAL" if skill_sweep.unresolved_ids else "COMPLETE",
+            "decision_coverage": skill_sweep.to_mapping(),
             "skill_plausible_total": len(validated["selected_skills"]),
             "skill_selected_total": len(validated["selected_skills"]),
-            "skill_never_considered_total": (
-                0
-                if working_preparation.inventory_sweep is None
-                else len(working_preparation.inventory_sweep.never_considered_ids)
-            ),
+            "skill_never_considered_total": len(skill_sweep.never_considered_ids),
             "skill_sweep_batch_count": (
                 0
                 if working_preparation.inventory_sweep is None

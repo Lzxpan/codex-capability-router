@@ -25,6 +25,7 @@ from codex_capability_router.skill_plan import (
     RootPlanSnapshot,
     SkillRootSpec,
     TRAVERSAL_BOUNDED_SUBTREE,
+    TRAVERSAL_DIRECT_SKILL,
     TRAVERSAL_KNOWN_SYSTEM,
     TRAVERSAL_PLUGIN_CONTAINER,
     build_skill_root_plan,
@@ -81,8 +82,9 @@ class Beta7FixedSkillRootCacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "A"
             child = root / "B"
+            _write_skill(child, "nested")
             covering = SkillRootSpec(root, "TEST", ROOT_KIND_RUNTIME_EXTRA, TRAVERSAL_BOUNDED_SUBTREE)
-            nested = SkillRootSpec(child, "TEST", ROOT_KIND_RUNTIME_EXTRA)
+            nested = SkillRootSpec(child, "TEST", ROOT_KIND_RUNTIME_EXTRA, TRAVERSAL_DIRECT_SKILL)
             covered = build_skill_root_plan(include_fixed_global=False, additional_roots=(covering, nested))
             not_covered = build_skill_root_plan(
                 include_fixed_global=False,
@@ -134,7 +136,8 @@ class Beta7FixedSkillRootCacheTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "skills"
             parent = SkillRootSpec(root, "TEST", ROOT_KIND_RUNTIME_EXTRA, TRAVERSAL_BOUNDED_SUBTREE)
-            extra = SkillRootSpec(root / "extra", "RUNTIME", ROOT_KIND_RUNTIME_EXTRA)
+            _write_skill(root / "extra", "extra")
+            extra = SkillRootSpec(root / "extra", "RUNTIME", ROOT_KIND_RUNTIME_EXTRA, TRAVERSAL_DIRECT_SKILL)
             plan = build_skill_root_plan(include_fixed_global=False, additional_roots=(parent, extra))
 
             self.assertEqual(plan.root_count, 1)
@@ -529,7 +532,7 @@ class Beta7FixedSkillRootCacheTests(unittest.TestCase):
             snapshot = refresh_skill_inventory_snapshot(plan)
 
             self.assertEqual(snapshot.inventory.canonical_unique_count, 1)
-            self.assertEqual(snapshot.inventory.never_considered_count, 0)
+            self.assertEqual(snapshot.inventory.never_considered_count, 1)
 
     def test_known_system_plan_has_single_managed_node(self) -> None:
         """.system known-child metadata 屬於 parent node，不是額外 root。"""
@@ -542,6 +545,50 @@ class Beta7FixedSkillRootCacheTests(unittest.TestCase):
             self.assertEqual(len(managed), 1)
             self.assertEqual(managed[0].traversal_mode, TRAVERSAL_KNOWN_SYSTEM)
             self.assertEqual(managed[0].known_children, (".system",))
+
+
+    def test_declared_nested_roots_preserve_actual_scanner_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "skills"
+            _write_skill(root / "alpha", "alpha")
+            _write_skill(root / "group" / "nested", "nested")
+            for mode in (TRAVERSAL_PLUGIN_CONTAINER, TRAVERSAL_BOUNDED_SUBTREE):
+                parent = SkillRootSpec(root, "TEST", ROOT_KIND_RUNTIME_EXTRA, mode)
+                for child in (
+                    SkillRootSpec(root / "group", "TEST", ROOT_KIND_RUNTIME_EXTRA),
+                    SkillRootSpec(root / "group" / "nested", "TEST", ROOT_KIND_RUNTIME_EXTRA, TRAVERSAL_DIRECT_SKILL),
+                ):
+                    for roots, expected in (((parent,), {"alpha"}), ((child,), {"nested"}), ((parent, child), {"alpha", "nested"})):
+                        with self.subTest(mode=mode, child=child.path, roots=roots):
+                            plan = build_skill_root_plan(include_fixed_global=False, additional_roots=roots)
+                            self.assertEqual({r.id for r in discover_skill_roots(plan).records}, expected)
+
+    def test_plugin_manifest_keeps_explicit_deep_skill_and_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary)
+            _write_skill(package / "skills" / "alpha", "alpha")
+            _write_skill(package / "skills" / "group" / "nested", "nested")
+            manifest = {"plugin_id": "example@local", "present": True, "package_root": str(package),
+                        "skills": ["./skills", "./skills/group/nested"]}
+            plan = build_skill_root_plan(include_fixed_global=False, plugin_manifests=(manifest,))
+            result = discover_skill_roots(plan)
+            self.assertEqual({r.id for r in result.records}, {"alpha", "nested"})
+            self.assertEqual({r.source for r in result.records}, {"plugin-skill-root:example@local"})
+
+    def test_root_with_own_skill_does_not_cover_child_and_known_system_does_not_cover_deep_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "skills"
+            _write_skill(root, "parent")
+            _write_skill(root / "child", "child")
+            _write_skill(root / ".system" / "group" / "deep", "deep")
+            for parent, child, expected in (
+                (SkillRootSpec(root, "TEST", ROOT_KIND_RUNTIME_EXTRA, TRAVERSAL_PLUGIN_CONTAINER),
+                 SkillRootSpec(root / "child", "TEST", ROOT_KIND_RUNTIME_EXTRA, TRAVERSAL_DIRECT_SKILL), {"parent", "child"}),
+                (SkillRootSpec(root, "TEST", ROOT_KIND_RUNTIME_EXTRA, TRAVERSAL_KNOWN_SYSTEM, known_children=(".system",)),
+                 SkillRootSpec(root / ".system" / "group" / "deep", "TEST", ROOT_KIND_RUNTIME_EXTRA, TRAVERSAL_DIRECT_SKILL), {"parent", "deep"}),
+            ):
+                plan = build_skill_root_plan(include_fixed_global=False, additional_roots=(parent, child))
+                self.assertEqual({r.id for r in discover_skill_roots(plan).records}, expected)
 
 
 if __name__ == "__main__":

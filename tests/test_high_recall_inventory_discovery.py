@@ -59,8 +59,8 @@ class HighRecallInventoryTests(unittest.TestCase):
         )
         first = build_inventory_sweep(items, identity_field="id", item_limit=7, byte_limit=800)
         second = build_inventory_sweep(tuple(reversed(items)), identity_field="id", item_limit=7, byte_limit=800)
-        self.assertEqual(first.considered_ids, tuple(item["id"] for item in sorted(items, key=lambda item: item["id"])))
-        self.assertEqual(first.never_considered_ids, ())
+        self.assertEqual(first.staged_ids, tuple(item["id"] for item in sorted(items, key=lambda item: item["id"])))
+        self.assertEqual(first.considered_ids, ())
         self.assertEqual(first.fingerprint, second.fingerprint)
         self.assertGreater(first.batch_count, 1)
 
@@ -75,8 +75,8 @@ class HighRecallInventoryTests(unittest.TestCase):
             preparation = prepare_high_recall_selection(inventory, "a broad repository task")
             self.assertEqual(len(preparation.candidates), 31)
             self.assertIn("skill-30", {item.id for item in preparation.candidates})
-            self.assertEqual(preparation.inventory_sweep.considered_ids[-1], "skill-30")
-            self.assertEqual(preparation.inventory_sweep.never_considered_ids, ())
+            self.assertEqual(preparation.inventory_sweep.staged_ids[-1], "skill-30")
+            self.assertEqual(preparation.inventory_sweep.considered_ids, ())
 
             analysis = TaskAnalysis(
                 "a broad repository task",
@@ -86,8 +86,8 @@ class HighRecallInventoryTests(unittest.TestCase):
                 (),
             )
             context = prepare_route_context(analysis, skill_roots=(root,))
-            self.assertEqual(context.metrics.semantically_considered_count, 31)
-            self.assertEqual(context.metrics.never_considered_count, 0)
+            self.assertEqual(context.metrics.never_considered_count, 31)
+            self.assertEqual(context.metrics.semantically_considered_count, 0)
             self.assertGreater(context.metrics.sweep_batch_count, 1)
 
     def test_skill_metadata_quality_does_not_exclude_opaque_profile(self) -> None:
@@ -103,7 +103,7 @@ class HighRecallInventoryTests(unittest.TestCase):
                 [item.id for item in preparation.candidates],
                 ["described-skill", "opaque-skill"],
             )
-            self.assertEqual(preparation.inventory_sweep.never_considered_ids, ())
+            self.assertEqual(preparation.inventory_sweep.considered_ids, ())
 
     def test_host_native_registry_is_generic_and_preserves_child_boundary(self) -> None:
         """top-level native capability 可成 builtin_tool；App child 不會升格。"""
@@ -171,8 +171,8 @@ class HighRecallInventoryTests(unittest.TestCase):
             provider_declarations=providers,
         )
         self.assertEqual(context.metrics.selectable_count, 29)
-        self.assertEqual(context.metrics.semantically_considered_count, 29)
-        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(context.metrics.never_considered_count, 29)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
         self.assertEqual(context.metrics.present_unverified_count, 29)
         self.assertEqual(len(context.provider_digests), 29)
 
@@ -195,7 +195,7 @@ class HighRecallInventoryTests(unittest.TestCase):
         self.assertEqual([item.provider_id for item in context.provider_digests], ["native.visual"])
         self.assertEqual(context.provider_digests[0].kind, "builtin_tool")
         self.assertEqual(context.provider_digests[0].readiness_state, "PRESENT_UNVERIFIED")
-        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
 
     def test_mcp_provider_description_survives_missing_schema(self) -> None:
         """MCP schema/detail 不完整時，meaningful provider metadata 仍可被考慮。"""
@@ -223,7 +223,7 @@ class HighRecallInventoryTests(unittest.TestCase):
             readiness_evidence=inventory.readiness_evidence,
         )
         self.assertEqual(context.metrics.present_unverified_count, 1)
-        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
 
     def test_provider_discovery_merge_deduplicates_exact_identity_only(self) -> None:
         """同一 exact declaration 可去重；不同 kind/identity 不因相似用途合併。"""

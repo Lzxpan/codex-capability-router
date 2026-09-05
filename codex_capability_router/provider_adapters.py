@@ -131,13 +131,13 @@ class ProviderDiscoveryInventory:
             )
             object.__setattr__(self, "metadata_sparse_count", sum(item.metadata_quality.value == "SPARSE" for item in declarations))
             object.__setattr__(self, "metadata_opaque_count", sum(item.metadata_quality.value == "OPAQUE" for item in declarations))
-            object.__setattr__(self, "semantically_considered_count", len(declarations))
+            object.__setattr__(self, "never_considered_count", len(declarations))
         if declarations:
             object.__setattr__(self, "metadata_sufficient_count", sum(item.metadata_quality.value == "SUFFICIENT" for item in declarations))
             object.__setattr__(self, "metadata_sparse_count", sum(item.metadata_quality.value == "SPARSE" for item in declarations))
             object.__setattr__(self, "metadata_opaque_count", sum(item.metadata_quality.value == "OPAQUE" for item in declarations))
         if declarations and self.semantically_considered_count == 0 and self.never_considered_count == 0:
-            object.__setattr__(self, "semantically_considered_count", len(declarations))
+            object.__setattr__(self, "never_considered_count", len(declarations))
         count_fields = (
             "host_snapshot_capability_count",
             "host_snapshot_builtin_count",
@@ -997,10 +997,10 @@ class ProviderAdapterInventory:
                 item.metadata_quality.value == "OPAQUE" for item in self.provider_declarations
             ),
             "identity_unresolved_count": 0,
-            "semantically_considered_count": (
+            "semantically_considered_count": 0,
+            "never_considered_count": (
                 self.selectable_count if self.selectable_count is not None else self.hard_eligible_count
             ),
-            "never_considered_count": 0,
         }
         for field_name, default in defaults.items():
             value = getattr(self, field_name)
@@ -1365,8 +1365,8 @@ def adapt_codex_mcp_cli_inventory(
         metadata_sufficient_count=sufficient,
         metadata_sparse_count=sparse,
         metadata_opaque_count=opaque,
-        semantically_considered_count=len(declarations),
-        never_considered_count=0,
+        semantically_considered_count=0,
+        never_considered_count=len(declarations),
     )
 
 

@@ -1080,8 +1080,7 @@ class SupportingMetrics:
     def __post_init__(self) -> None:
         """驗證 lazy run state 與未選擇 contract。"""
 
-        # 舊版直接建立 metrics 的呼叫沒有 sweep 欄位；現有 selectable
-        # digests 視為已進入舊 contract 的 consideration，保持相容。
+        # Legacy construction without decisions leaves every candidate pending.
         if (
             self.run_state == "ran"
             and self.selectable_count
@@ -1090,7 +1089,7 @@ class SupportingMetrics:
             and self.never_considered_count == 0
             and self.sweep_fingerprint is None
         ):
-            object.__setattr__(self, "semantically_considered_count", self.selectable_count)
+            object.__setattr__(self, "never_considered_count", self.selectable_count)
 
         if self.run_state not in _RUN_STATES:
             raise ValueError("unsupported supporting metrics run_state")
@@ -1233,6 +1232,7 @@ class SupportingMetrics:
                     "provider_metadata_opaque_total": self.metadata_opaque_count,
                     "provider_identity_unresolved_total": self.identity_unresolved_count,
                     "provider_semantically_considered_total": self.semantically_considered_count,
+                    "provider_staged_total": self.selectable_count,
                     "provider_plausible_total": self.plausible_count,
                     "provider_selected_total": self.selected_count,
                     "provider_never_considered_total": self.never_considered_count,
@@ -1283,6 +1283,13 @@ class SupportingRouteContext:
             raise ValueError("supporting context fingerprint does not match contents")
 
     @property
+    def inventory_sweep(self):
+        return build_inventory_sweep(
+            tuple(provider_digest(p) for p in self.provider_digests), identity_field="provider_id",
+            scope_fingerprint=_sha256({"execution_needs": [need.to_mapping() for need in self.execution_needs]}),
+        )
+
+    @property
     def run_state(self) -> str:
         """回傳 supporting preparation run state。"""
 
@@ -1296,6 +1303,7 @@ class SupportingRouteContext:
             "execution_needs": [item.to_mapping() for item in self.execution_needs],
             "readiness_evidence": [item.to_mapping() for item in self.readiness_evidence],
             "provider_digests": [item.to_mapping() for item in self.provider_digests],
+            "inventory_sweep": self.inventory_sweep.to_mapping(),
             "detail_references": [item.to_mapping() for item in self.detail_references],
             "metrics": self.metrics.to_mapping(),
             "context_fingerprint": self.context_fingerprint,
@@ -1653,6 +1661,7 @@ def prepare_supporting_context(
     provider_sweep = build_inventory_sweep(
         tuple(provider_digest(item) for item in digests),
         identity_field="provider_id",
+        scope_fingerprint=_sha256({"execution_needs": [need.to_mapping() for need in needs]}),
     )
     metrics = SupportingMetrics(
         run_state="ran",

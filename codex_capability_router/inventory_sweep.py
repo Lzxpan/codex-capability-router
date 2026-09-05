@@ -1,9 +1,9 @@
-"""高召回 inventory 的 deterministic batching contract。"""
+"""Deterministic digest staging and validated Host decision coverage."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import re
@@ -16,16 +16,18 @@ DEFAULT_SWEEP_BYTE_LIMIT = 24_000
 
 @dataclass(frozen=True)
 class InventorySweep:
-    """完整 digest sweep 的公開證據；不包含語意排序或 semantic score。"""
+    """Public staging and Host disposition evidence; no semantic ranking."""
 
     identity_field: str
     batches: tuple[tuple[str, ...], ...]
     considered_ids: tuple[str, ...]
     never_considered_ids: tuple[str, ...]
     fingerprint: str
+    decision_received_ids: tuple[str, ...] = ()
+    selected_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        """驗證 batches 完整覆蓋且每個 identity 只被考慮一次。"""
+        """Validate batch identities and the received/resolved/missing partitions."""
 
         if not isinstance(self.identity_field, str) or not self.identity_field.strip():
             raise ValueError("identity_field must be non-empty text")
@@ -37,10 +39,18 @@ class InventorySweep:
         if len(set(never)) != len(never) or set(considered) & set(never):
             raise ValueError("sweep IDs must be disjoint and unique")
         flattened = tuple(item for batch in batches for item in batch)
-        if flattened != considered:
-            raise ValueError("considered IDs must preserve deterministic batch order")
-        if never:
-            raise ValueError("completed inventory sweep cannot leave IDs unconsidered")
+        received = tuple(self.decision_received_ids)
+        selected = tuple(self.selected_ids)
+        if len(set(flattened)) != len(flattened):
+            raise ValueError("staged IDs must be unique")
+        for values in (considered, never, received, selected):
+            identities = set(values)
+            if tuple(item for item in flattened if item in identities) != values:
+                raise ValueError("sweep IDs must preserve deterministic batch order")
+        if not set(selected) <= set(considered) <= set(received):
+            raise ValueError("selected and considered IDs require received decisions")
+        if set(never) != set(flattened) - set(received):
+            raise ValueError("missing decisions must remain unconsidered")
         if any(_IDENTIFIER.fullmatch(item) is None for item in (*considered, *never)):
             raise ValueError("sweep IDs must be canonical identifiers")
         if not isinstance(self.fingerprint, str) or not re.fullmatch(r"[0-9a-f]{64}", self.fingerprint):
@@ -48,6 +58,17 @@ class InventorySweep:
         object.__setattr__(self, "batches", batches)
         object.__setattr__(self, "considered_ids", considered)
         object.__setattr__(self, "never_considered_ids", never)
+        object.__setattr__(self, "decision_received_ids", received)
+        object.__setattr__(self, "selected_ids", selected)
+
+    @property
+    def staged_ids(self) -> tuple[str, ...]:
+        return tuple(item for batch in self.batches for item in batch)
+
+    @property
+    def unresolved_ids(self) -> tuple[str, ...]:
+        resolved = set(self.considered_ids)
+        return tuple(item for item in self.staged_ids if item not in resolved)
 
     @property
     def batch_count(self) -> int:
@@ -61,10 +82,19 @@ class InventorySweep:
         return {
             "identity_field": self.identity_field,
             "batch_count": self.batch_count,
+            "staged_count": len(self.staged_ids),
+            "decision_received_count": len(self.decision_received_ids),
+            "selected_count": len(self.selected_ids),
+            "unresolved_count": len(self.unresolved_ids),
+            "semantic_coverage_status": "PARTIAL" if self.unresolved_ids else "COMPLETE",
             "considered_count": len(self.considered_ids),
             "never_considered_count": len(self.never_considered_ids),
             "batch_ids": [list(batch) for batch in self.batches],
             "fingerprint": self.fingerprint,
+            "dispositions": {
+                identity: ("selected" if identity in self.selected_ids else "not_selected" if identity in self.considered_ids else "needs_detail")
+                for identity in self.decision_received_ids
+            },
         }
 
 
@@ -74,6 +104,7 @@ def build_inventory_sweep(
     identity_field: str,
     item_limit: int = DEFAULT_SWEEP_ITEM_LIMIT,
     byte_limit: int = DEFAULT_SWEEP_BYTE_LIMIT,
+    scope_fingerprint: str | None = None,
 ) -> InventorySweep:
     """將所有已通過 deterministic gate 的 digest 排成 bounded batches。
 
@@ -88,6 +119,8 @@ def build_inventory_sweep(
         raise ValueError("item_limit must be a positive integer")
     if isinstance(byte_limit, bool) or not isinstance(byte_limit, int) or byte_limit <= 0:
         raise ValueError("byte_limit must be a positive integer")
+    if scope_fingerprint is not None and (not isinstance(scope_fingerprint, str) or re.fullmatch(r"[0-9a-f]{64}", scope_fingerprint) is None):
+        raise ValueError("scope fingerprint must be a SHA-256 digest")
 
     normalized: list[tuple[str, bytes]] = []
     seen: set[str] = set()
@@ -129,6 +162,8 @@ def build_inventory_sweep(
         "item_limit": item_limit,
         "byte_limit": byte_limit,
         "batches": [list(batch) for batch in batches],
+        "digests": [encoded.decode("utf-8") for _, encoded in normalized],
+        "scope_fingerprint": scope_fingerprint,
     }
     fingerprint = hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -136,9 +171,54 @@ def build_inventory_sweep(
     return InventorySweep(
         identity_field=identity_field,
         batches=tuple(batches),
-        considered_ids=considered,
-        never_considered_ids=(),
+        considered_ids=(),
+        never_considered_ids=considered,
         fingerprint=fingerprint,
+    )
+
+
+def validate_sweep_decisions(
+    sweep: InventorySweep,
+    responses: Sequence[Mapping[str, object]],
+    *,
+    task_fingerprint: str,
+    selected_ids: Sequence[str] = (),
+) -> InventorySweep:
+    """Validate Host dispositions; missing batches remain partial, never inferred."""
+
+    if not isinstance(task_fingerprint, str) or re.fullmatch(r"[0-9a-f]{64}", task_fingerprint) is None:
+        raise ValueError("decisions require a task context fingerprint")
+    if isinstance(responses, (str, bytes)) or not isinstance(responses, Sequence):
+        raise ValueError("batch decisions must be a sequence")
+    selected = set(selected_ids)
+    if not selected <= set(sweep.staged_ids):
+        raise ValueError("selected IDs must belong to this sweep")
+    seen: set[int] = set()
+    decisions: dict[str, str] = {}
+    for response in responses:
+        if not isinstance(response, Mapping) or set(response) != {"task_fingerprint", "sweep_fingerprint", "batch_index", "dispositions"}:
+            raise ValueError("invalid batch decision fields")
+        if response["task_fingerprint"] != task_fingerprint or response["sweep_fingerprint"] != sweep.fingerprint:
+            raise ValueError("batch decision task or snapshot is stale")
+        index = response["batch_index"]
+        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < sweep.batch_count or index in seen:
+            raise ValueError("invalid or duplicate batch index")
+        dispositions = response["dispositions"]
+        if not isinstance(dispositions, Mapping) or set(dispositions) != set(sweep.batches[index]):
+            raise ValueError("batch dispositions must match every candidate exactly")
+        for identity, disposition in dispositions.items():
+            if not isinstance(disposition, str) or disposition not in {"selected", "not_selected", "needs_detail"}:
+                raise ValueError("invalid candidate disposition")
+            if (disposition == "selected") != (identity in selected):
+                raise ValueError("candidate disposition conflicts with final selection")
+        seen.add(index)
+        decisions.update(dispositions)
+    return replace(
+        sweep,
+        decision_received_ids=tuple(i for i in sweep.staged_ids if i in decisions),
+        considered_ids=tuple(i for i in sweep.staged_ids if i in decisions and decisions[i] != "needs_detail"),
+        never_considered_ids=tuple(i for i in sweep.staged_ids if i not in decisions),
+        selected_ids=tuple(i for i in sweep.staged_ids if decisions.get(i) == "selected"),
     )
 
 
@@ -152,6 +232,7 @@ def skill_digest(profile: object) -> dict[str, object]:
         "status": profile.status.value,
         "source": profile.source,
         "provenance": list(profile.provenance),
+        "fingerprint": profile.fingerprint,
     }
 
 

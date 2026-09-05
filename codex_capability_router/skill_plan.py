@@ -306,9 +306,21 @@ def _covers(parent: SkillRootSpec, child: SkillRootSpec) -> bool:
     except ValueError:
         return False
     if parent.traversal_mode in {TRAVERSAL_PLUGIN_CONTAINER, TRAVERSAL_BOUNDED_SUBTREE}:
-        return True
+        # Only a direct immediate Skill is covered; child containers add depth.
+        return (
+            len(relative.parts) == 1
+            and child.traversal_mode == TRAVERSAL_DIRECT_SKILL
+            and not (parent.path / "SKILL.md").is_file()
+        )
     if parent.traversal_mode == TRAVERSAL_KNOWN_SYSTEM:
-        return bool(relative.parts) and relative.parts[0] in parent.known_children
+        return (
+            len(relative.parts) == 1
+            and relative.parts[0] in parent.known_children
+            and child.traversal_mode in {
+                TRAVERSAL_IMMEDIATE, TRAVERSAL_DIRECT_SKILL,
+                TRAVERSAL_PLUGIN_CONTAINER, TRAVERSAL_BOUNDED_SUBTREE,
+            }
+        )
     return False
 
 

@@ -119,7 +119,7 @@ class ExistenceFirstSkillTests(unittest.TestCase):
         self.assertEqual(inventory.metadata_sufficient_count, 1)
         preparation = prepare_high_recall_selection(inventory, "package capability audit")
         self.assertEqual([profile.id for profile in preparation.candidates], ["package-only"])
-        self.assertEqual(preparation.inventory_sweep.never_considered_ids, ())
+        self.assertEqual(preparation.inventory_sweep.considered_ids, ())
 
 
 class ExistenceFirstProviderTests(unittest.TestCase):
@@ -144,7 +144,7 @@ class ExistenceFirstProviderTests(unittest.TestCase):
         )
         self.assertEqual(len(context.provider_digests), 1)
         self.assertEqual(context.provider_digests[0].readiness_state, "KNOWN_UNAVAILABLE")
-        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
 
     def test_failed_mcp_with_metadata_is_still_selectable(self) -> None:
         """MCP failed/auth state 只影響 readiness，不移除 server Provider。"""
@@ -167,7 +167,8 @@ class ExistenceFirstProviderTests(unittest.TestCase):
         )
         self.assertEqual(inventory.selectable_count, 1)
         self.assertEqual(context.provider_digests[0].readiness_state, "KNOWN_UNAVAILABLE")
-        self.assertEqual(context.metrics.semantically_considered_count, 1)
+        self.assertEqual(context.metrics.never_considered_count, 1)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
 
     def test_plugin_children_use_presence_not_active_state_and_keep_formal_boundary(self) -> None:
         """Plugin enabled=false 的 child 可發現，但 Plugin package 本身不成 Provider。"""

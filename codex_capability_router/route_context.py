@@ -220,8 +220,7 @@ class SkillContextMetrics:
     def __post_init__(self) -> None:
         """驗證 bounded counts，並在 available=0 時固定 ratio=null。"""
 
-        # 舊版直接建立 metrics 的呼叫沒有 sweep 欄位；視為其候選已進入
-        # 舊 contract 的 consideration，避免相容性 constructor 產生假違規。
+        # Legacy construction without decisions leaves every candidate pending.
         if (
             self.candidate_count
             and self.semantically_considered_count == 0
@@ -229,7 +228,7 @@ class SkillContextMetrics:
             and self.never_considered_count == 0
             and self.sweep_fingerprint is None
         ):
-            object.__setattr__(self, "semantically_considered_count", self.candidate_count)
+            object.__setattr__(self, "never_considered_count", self.candidate_count)
 
         for field_name in ("available_count", "candidate_count", "selected_count"):
             value = getattr(self, field_name)
@@ -311,6 +310,7 @@ class SkillContextMetrics:
             "skill_trusted_total": self.trusted_root_skill_count,
             "skill_available_total": self.available_count,
             "skill_semantically_considered_total": self.semantically_considered_count,
+            "skill_staged_total": self.candidate_count,
             "skill_plausible_total": self.plausible_count,
             "skill_selected_total": self.selected_count,
             "skill_never_considered_total": self.never_considered_count,
@@ -411,6 +411,12 @@ class SkillRouteContext:
         return self.validated_decision_payloads.task_analysis
 
     @property
+    def inventory_sweep(self):
+        from .inventory_sweep import build_inventory_sweep, skill_digest
+
+        return build_inventory_sweep(tuple(skill_digest(p) for p in self.candidates), identity_field="id")
+
+    @property
     def task_summary(self) -> str:
         """取得舊 task_summary 的唯讀相容 projection。"""
 
@@ -423,6 +429,7 @@ class SkillRouteContext:
             "contract_version": ROUTE_CONTEXT_CONTRACT_VERSION,
             "validated_decision_payloads": self.validated_decision_payloads.to_mapping(),
             "candidates": [_profile_mapping(profile) for profile in self.candidates],
+            "inventory_sweep": self.inventory_sweep.to_mapping(),
             "enriched_profiles": [_enriched_mapping(profile) for profile in self.enriched_profiles],
             "skill_eligibility": [item.to_mapping() for item in self.skill_eligibility],
             "handoff_references": [item.to_mapping() for item in self.handoff_references],

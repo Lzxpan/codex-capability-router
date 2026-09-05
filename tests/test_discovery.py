@@ -6,6 +6,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from codex_capability_router.discovery import (
     discover_skill_roots,
@@ -64,6 +65,26 @@ class Phase2DiscoveryTests(unittest.TestCase):
                     "last_verified",
                 },
             )
+
+    def test_unreadable_roots_keep_their_own_diagnostic_and_valid_records(self) -> None:
+        for failed_index in range(3):
+            for permission_denied in (False, True):
+                with self.subTest(index=failed_index, denied=permission_denied), tempfile.TemporaryDirectory() as temporary:
+                    roots = [Path(temporary) / f"root-{i}" for i in range(3)]
+                    for i, root in enumerate(roots):
+                        if i != failed_index or permission_denied:
+                            _write_skill(root / f"skill-{i}", f"skill-{i}")
+                    original = Path.iterdir
+
+                    def iterdir(path):
+                        if permission_denied and path == roots[failed_index]:
+                            raise PermissionError("simulated unreadable root")
+                        return original(path)
+
+                    with patch.object(Path, "iterdir", iterdir):
+                        result = discover_skill_roots(roots)
+                    self.assertEqual({r.id for r in result.records}, {f"skill-{i}" for i in range(3) if i != failed_index})
+                    self.assertEqual([(d.code, d.source) for d in result.diagnostics], [("unreadable_root", f"skill-root:{failed_index}")])
 
     def test_discover_multiple_valid_skills(self) -> None:
         """多筆合法 skill 依 canonical id 排序輸出。"""

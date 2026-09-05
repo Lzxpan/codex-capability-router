@@ -205,7 +205,7 @@ class HostCapabilitySnapshotTests(unittest.TestCase):
         self.assertEqual(context.metrics.selectable_count, 1)
         self.assertEqual(context.metrics.metadata_opaque_count, 1)
         self.assertEqual(context.provider_digests[0].metadata_quality.value, "OPAQUE")
-        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
 
     def test_snapshot_provider_enters_sweep_as_present_unverified(self) -> None:
         snapshot = _snapshot(
@@ -224,8 +224,8 @@ class HostCapabilitySnapshotTests(unittest.TestCase):
         self.assertEqual([item.provider_id for item in context.provider_digests], ["visual.generate"])
         self.assertEqual(context.provider_digests[0].readiness_state, "PRESENT_UNVERIFIED")
         self.assertEqual(context.provider_digests[0].discovery_evidence_state, "DISCOVERED_TRUSTED")
-        self.assertEqual(context.metrics.semantically_considered_count, 1)
-        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(context.metrics.never_considered_count, 1)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
         self.assertEqual(context.metrics.host_snapshot_builtin_count, 1)
         self.assertEqual(context.metrics.host_snapshot_fingerprint, snapshot.fingerprint)
 
@@ -304,8 +304,8 @@ class HostCapabilitySnapshotTests(unittest.TestCase):
             host_capability_snapshot=_snapshot(*reversed(capabilities)),
         )
         self.assertEqual(first.metrics.selectable_count, 41)
-        self.assertEqual(first.metrics.semantically_considered_count, 41)
-        self.assertEqual(first.metrics.never_considered_count, 0)
+        self.assertEqual(first.metrics.never_considered_count, 41)
+        self.assertEqual(first.metrics.semantically_considered_count, 0)
         self.assertGreater(first.metrics.sweep_batch_count, 1)
         self.assertEqual(first.context_fingerprint, second.context_fingerprint)
 

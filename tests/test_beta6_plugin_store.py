@@ -193,10 +193,10 @@ class Beta6PluginStoreTests(unittest.TestCase):
                 {(item.kind, item.provider_id) for item in providers.provider_declarations},
                 {("app", "declared-app"), ("mcp", "declared-mcp")},
             )
-            self.assertEqual(context.metrics.semantically_considered_count, 2)
-            self.assertEqual(context.metrics.never_considered_count, 0)
-            self.assertEqual(skills.semantically_considered_count, 1)
-            self.assertEqual(skills.never_considered_count, 0)
+            self.assertEqual(context.metrics.never_considered_count, 2)
+            self.assertEqual(context.metrics.semantically_considered_count, 0)
+            self.assertEqual(skills.never_considered_count, 1)
+            self.assertEqual(skills.semantically_considered_count, 0)
 
     def test_resolver_has_no_cache_wide_recursive_discovery(self) -> None:
         """source guard 固定 resolver 不使用 whole-store recursive search。"""

@@ -97,7 +97,7 @@ class FoundationStructureTests(unittest.TestCase):
         traditional_chinese = _read_utf8("README.md")
         english = _read_utf8("README.en.md")
         for content in (english, traditional_chinese):
-            self.assertIn("0.2.0-beta.9", content)
+            self.assertIn("0.2.0-beta.10", content)
             self.assertIn("0.1.0", content)
             self.assertIn("read-only", content.lower())
             self.assertIn("network", content.lower())
@@ -119,7 +119,7 @@ class FoundationStructureTests(unittest.TestCase):
         # 原始內容：測試固定期待 v0.2.0-beta.1 package metadata。
         # 修改原因：beta.5 development version 必須與 package metadata 同步。
         # 修改後功能：測試確認 pyproject 使用 v0.2.0-beta.8，且不改變 runtime dependency 邊界。
-        self.assertIn('version = "0.2.0-beta.9"', metadata)
+        self.assertIn('version = "0.2.0-beta.10"', metadata)
         self.assertIn("dependencies = []", metadata)
 
     def test_package_exports_version_without_execution(self) -> None:
@@ -140,7 +140,7 @@ class FoundationStructureTests(unittest.TestCase):
         # 修改後功能：測試確認 package 匯出 v0.2.0-beta.1，且不改變 no-execution 邊界。
 
         package = importlib.import_module("codex_capability_router")
-        self.assertEqual(package.__version__, "0.2.0-beta.9")
+        self.assertEqual(package.__version__, "0.2.0-beta.10")
         allowed_submodules = {
             "models",
             "validation",

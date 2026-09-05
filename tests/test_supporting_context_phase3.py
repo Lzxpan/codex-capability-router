@@ -264,8 +264,10 @@ class Phase3SupportingContextTests(unittest.TestCase):
         context = prepare_supporting_context([_need()], provider_declarations=(declaration,))
         self.assertEqual(context.metrics.present_count, 1)
         self.assertEqual(context.metrics.metadata_opaque_count, 1)
-        self.assertEqual(context.metrics.semantically_considered_count, 1)
-        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(context.metrics.selectable_count, 1)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
+        self.assertEqual(context.metrics.never_considered_count, 1)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
         self.assertEqual(len(context.provider_digests), 1)
 
     def test_execution_attempt_is_bounded_and_provider_level(self) -> None:

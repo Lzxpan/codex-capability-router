@@ -52,8 +52,8 @@ class Beta5AuthoritativeDiscoveryTests(unittest.TestCase):
 
             self.assertEqual(inventory.canonical_unique_count, 1)
             self.assertIn(inventory.profiles[0].metadata_quality.value, {"SPARSE", "OPAQUE"})
-            self.assertEqual(inventory.semantically_considered_count, 1)
-            self.assertEqual(inventory.never_considered_count, 0)
+            self.assertEqual(inventory.never_considered_count, 1)
+            self.assertEqual(inventory.semantically_considered_count, 0)
 
     def test_plugin_manifest_string_paths_are_exact_and_bounded(self) -> None:
         """現行 string declaration 只讀 exact Skill/App/MCP paths。"""
@@ -98,8 +98,8 @@ class Beta5AuthoritativeDiscoveryTests(unittest.TestCase):
                 {(item.kind, item.provider_id) for item in provider_inventory.provider_declarations},
                 {("app", "declared-app"), ("mcp", "declared-mcp")},
             )
-            self.assertEqual(context.metrics.semantically_considered_count, 2)
-            self.assertEqual(context.metrics.never_considered_count, 0)
+            self.assertEqual(context.metrics.never_considered_count, 2)
+            self.assertEqual(context.metrics.semantically_considered_count, 0)
             self.assertEqual(provider_inventory.raw_evidence_count, 2)
 
     def test_declared_child_path_escape_is_rejected_without_package_glob(self) -> None:

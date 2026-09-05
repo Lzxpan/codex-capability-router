@@ -1,48 +1,72 @@
-# Discovery、Provenance 與 Registry 欄位
+# Discovery, provenance, and registry fields
 
-這份 reference 保存 `codex-capability-router` v0.1.0 的詳細 discovery 規則；`SKILL.md` 只保留 operational contract。
+Current contract: `v0.2.0-beta.10`. Historical release scope lives in CHANGELOG.md
+and explicitly marked historical documents, not in current selection gates.
 
-## 來源與權威順序
+## Trusted roots and bounded traversal
 
-1. `runtime:*`：目前執行環境直接宣告的 capability，最高權威。
-2. `cli:*`：核准的 verified read-only CLI probe。
-3. `skill-root:*`：呼叫端明確 allowlist 的 skill root。
-4. `manual:*`：呼叫端提供的描述性 inventory，不能當作執行授權。
+The controller builds a `RootPlanSnapshot` from fixed global roots
+(`$HOME/.agents/skills`, `$CODEX_HOME/skills`), the managed root's known
+`.system` child, known project roots, explicit runtime roots, and resolved
+active Plugin manifest paths. The scanner reads a direct Skill or immediate
+children; it never recursively walks unknown subtrees or a PluginStore ancestor.
 
-同一 `id` 由最高順位 record 勝出。不同 status、`last_verified` 或其他可比對宣告不得靜默丟棄；合併結果保留 `provenance`、`conflicts`、`evidence`，並輸出 `source_conflict` diagnostic。
+Compression removes a child only when the parent's actual traversal covers its
+declared scope. A direct immediate child may be covered by a container; nested
+containers and deeper direct Skills remain explicit roots. Distinct Plugin
+identities are not collapsed across ancestors. Known `.system` traversal is
+bounded and does not authorize arbitrary hidden directories.
 
-## 公開欄位
+A missing/unreadable root emits its own `unreadable_root` diagnostic and does
+not erase readable sources. Permission-error fixtures prove exception handling;
+they are not Windows ACL or hardware acceptance.
 
-`id`、`name`、`kind`、`status`、`categories`、`triggers`、`priority`、`overlap_group`、`preferred_for`、`requires`、`source`、`last_verified` 是 canonical 欄位。可選的 `function` object（`en`、`zh-TW`）提供 user-facing 功能說明；可選的 `provenance`、`confidence`、`conflicts`、`evidence`、`recommendation_only` 用來保留本次 runtime merge 的可追溯資訊。
+## Sources and identity
 
-缺少 requested locale 的 Function metadata 時，renderer 必須輸出明確 unavailable fallback，不得從 category、trigger 或名稱推測功能。
+Runtime and supported read-only CLI evidence, trusted filesystem roots, Plugin
+declarations, and caller-provided descriptive inventory retain provenance.
+Same-identity conflicts are diagnostic; physical-source binding for a canonical
+Skill is deterministic. Profile and handoff bind the same selected source.
 
-缺少可靠 status 時使用 `unknown`；不得從名稱、目錄或命令輸出推測 `installed`。`confidence` 僅接受 `0.0..1.0`。
+Metadata quality is diagnostic. `SUFFICIENT`, `SPARSE`, and `OPAQUE` are
+staged when existence and identity are resolved. Unknown existence is diagnostic,
+not an inferred installation. Presence does not imply callability, authorization,
+connection, or execution success.
 
-## Host Capability Snapshot Bridge
+Inventory and context preparation do not receive LLM decisions. Their semantic
+decision counts start at zero; stage counts and Host batch evidence are separate.
+See [routing policy](routing-policy.md) for the current receipt contract.
 
-Codex controller 可將本 session 已暴露的 public capability metadata，以
-`HostCapabilitySnapshot` 傳入 Router。只有 controller-owned envelope 經
-`trusted_host_snapshot` marker 正規化後才能進 production route；Python 不宣稱
-這是 cryptographic origin proof，也不接受一般 user mapping 作為等價輸入。
+## Host capability snapshot
 
-Snapshot 只保存 namespace、action、display name、description、exposure state、
-明確 hierarchy、parent identity、provenance 與可選 side-effect/read-only/callable
-hint。`host_native` 才能成為 `builtin_tool`；`app_child` / `mcp_child` 併入對應
-formal Provider；`unknown` 轉成保留 `hierarchy_state=UNKNOWN` 的 `host_tool`
-fallback，Plugin package 不會成為 formal Provider。Snapshot Provider 接著進入
-既有完整 deterministic semantic sweep；metadata quality 與 readiness 不作
-consideration gate，也不自動執行。
+Only a controller-owned envelope normalized into `HostCapabilitySnapshot` is
+accepted by the typed channel. The trust marker is not cryptographic origin proof.
+Public namespace, action, display metadata, hierarchy, parent identity, provenance,
+and exposure hints are sufficient; no secret or raw arguments belong here.
 
-## 核准 CLI probes
+`host_native` entries map to `builtin_tool`; explicit App/MCP children group
+under their formal Provider. Unknown hierarchy remains `host_tool` with
+`hierarchy_state=UNKNOWN`. Plugin is a provenance container.
 
-只允許：
+## CLI compatibility
 
-- `codex plugin list --json`
-- `codex mcp list --json`
+The existing fixed probe allowlist contains `codex plugin list --json` and
+`codex mcp list --json`. Allowlisting is not evidence that the installed Host
+supports a command. Verify support before choosing a probe.
 
-adapter 使用 `shell=False`、固定 timeout 與 bounded JSON parsing。命令不存在、non-zero、timeout、malformed JSON 或 schema 不符時，回傳 `partial=true`、warning/evidence 與 `unknown` record；不得 crash，也不得把失敗轉成 available。不得執行任意 shell、marketplace query、credential/auth probing。
+Missing commands, unsupported subcommands, nonzero exits, timeout, malformed JSON,
+and schema failures remain partial diagnostics. They never mean an empty installed
+inventory. Probes use fixed arguments, `shell=False`, bounded time and parsing;
+no arbitrary shell, marketplace lookup, credentials, or auth probing is allowed
+inside Router discovery.
 
-## 隱私邊界
+## Public fields and privacy
 
-`source` 是 abstract label。拒絕 secret-like fields、API keys、tokens、credentials、private inventory 與不必要的 absolute paths；diagnostic 也不得回顯被拒絕的值。Discovery 只讀取 caller 傳入的 explicit roots，不猜測 home 或其他 filesystem 路徑。
+Canonical IDs, names, kinds, status, descriptions, versions, provenance, conflicts,
+and bounded evidence remain public contract metadata. Historical category,
+trigger, priority, and overlap fields do not authorize keyword-based selection.
+Localized Function metadata has an explicit unavailable fallback when absent.
+
+Source labels are abstract. Do not emit private absolute paths, credentials,
+tokens, raw private task inputs, or hidden reasoning. Inventory persistence and
+Host/controller preference storage are outside this library's read-only scope.

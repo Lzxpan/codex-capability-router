@@ -64,7 +64,7 @@
 # 修改紀錄（2026-09-04，Codex）
 # 修改原因：beta.9 修正 canonical Skill 多 physical source 的 handoff freshness 綁定。
 # 修改後功能：公開 v0.2.0-beta.9 version；selection/discovery semantics 不變。
-__version__ = "0.2.0-beta.9"
+__version__ = "0.2.0-beta.10"
 
 from .registry import classify_capability, deduplicate_registry
 from .host_exposure import (

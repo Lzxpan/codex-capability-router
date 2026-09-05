@@ -388,13 +388,18 @@ def handoff_full_instructions(
         except (OSError, UnicodeError) as error:
             raise ValueError("selected Skill instructions are unavailable") from error
         if fingerprint_profile_content(profile, raw_instructions) != profile.fingerprint:
-            raise SkillHandoffFingerprintMismatch("selected Skill changed before full instruction handoff")
+            raise SkillHandoffFingerprintMismatch(skill_id)
         handoffs.append(FullInstructionHandoff(skill_id, profile.fingerprint, instructions))
     return tuple(handoffs)
 
 
 class SkillHandoffFingerprintMismatch(ValueError):
     """表示 selected Skill 的 authoritative bytes 與 snapshot 不一致。"""
+
+    def __init__(self, skill_id: str) -> None:
+        _require_skill_id(skill_id)
+        self.skill_id = skill_id
+        super().__init__("selected Skill changed before full instruction handoff")
 
 
 @dataclass(frozen=True)
@@ -419,10 +424,8 @@ def handoff_with_selected_skill_refresh(
             handoffs,
             SelectedSkillRefreshResult(snapshot, "", 0, False),
         )
-    except SkillHandoffFingerprintMismatch:
-        if not preliminary.skill_ids:
-            raise
-        refreshed = refresh_selected_skill_snapshot(snapshot, preliminary.skill_ids[0])
+    except SkillHandoffFingerprintMismatch as error:
+        refreshed = refresh_selected_skill_snapshot(snapshot, error.skill_id)
         if refreshed.semantic_digest_changed:
             raise ValueError("SELECTION_REVALIDATION_REQUIRED")
         try:

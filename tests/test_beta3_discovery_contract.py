@@ -97,8 +97,9 @@ class Beta3DiscoveryContractTests(unittest.TestCase):
         )
         self.assertEqual(inventory.runtime_entity_count, 2)
         self.assertEqual(inventory.selectable_count, 2)
-        self.assertEqual(inventory.semantically_considered_count, 2)
-        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(inventory.never_considered_count, 2)
+        self.assertEqual(inventory.semantically_considered_count, 0)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
 
     def test_opaque_provider_is_considered_without_readiness_or_metadata_gate(self) -> None:
         declaration = SupportingProviderDeclaration(
@@ -117,8 +118,8 @@ class Beta3DiscoveryContractTests(unittest.TestCase):
             provider_declarations=(declaration,),
         )
         self.assertEqual(context.provider_digests[0].metadata_quality.value, "OPAQUE")
-        self.assertEqual(context.metrics.semantically_considered_count, 1)
-        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(context.metrics.never_considered_count, 1)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
 
     def test_sparse_skill_is_considered_even_without_description(self) -> None:
         with tempfile.TemporaryDirectory() as value:
@@ -133,7 +134,7 @@ class Beta3DiscoveryContractTests(unittest.TestCase):
             preparation = prepare_high_recall_selection(inventory, "unrelated task")
             self.assertEqual(len(preparation.candidates), 1)
             self.assertEqual(preparation.candidates[0].metadata_quality.value, "SPARSE")
-            self.assertEqual(preparation.inventory_sweep.never_considered_ids, ())
+            self.assertEqual(preparation.inventory_sweep.considered_ids, ())
 
     def test_controller_registry_projection_preserves_hierarchy_boundary(self) -> None:
         snapshot = HostCapabilitySnapshot.from_controller_registry(

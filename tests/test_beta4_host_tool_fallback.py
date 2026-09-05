@@ -50,8 +50,8 @@ class Beta4HostToolFallbackTests(unittest.TestCase):
         )
         self.assertEqual(context.metrics.metadata_opaque_count, 1)
         self.assertEqual(context.metrics.selectable_count, 1)
-        self.assertEqual(context.metrics.semantically_considered_count, 1)
-        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(context.metrics.never_considered_count, 1)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
         self.assertEqual(context.provider_digests[0].kind, "host_tool")
         self.assertEqual(context.provider_digests[0].hierarchy_state, "UNKNOWN")
 
@@ -158,8 +158,8 @@ class Beta4HostToolFallbackTests(unittest.TestCase):
             provider_declarations=(declaration,),
         )
         self.assertEqual(context.metrics.selectable_count, 1)
-        self.assertEqual(context.metrics.semantically_considered_count, 1)
-        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(context.metrics.never_considered_count, 1)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
 
     def test_receipt_and_execution_attempt_accept_host_tool(self) -> None:
         receipt = SelectionReceipt._from_route(
@@ -224,8 +224,8 @@ class Beta4HostToolFallbackTests(unittest.TestCase):
             host_capability_snapshot=snapshot,
         )
         self.assertEqual(context.metrics.selectable_count, 125)
-        self.assertEqual(context.metrics.semantically_considered_count, 125)
-        self.assertEqual(context.metrics.never_considered_count, 0)
+        self.assertEqual(context.metrics.never_considered_count, 125)
+        self.assertEqual(context.metrics.semantically_considered_count, 0)
         self.assertGreater(context.metrics.sweep_batch_count, 1)
 
 

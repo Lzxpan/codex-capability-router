@@ -400,6 +400,7 @@ def _discover_skill_root_specs(
     }
     for root_index, spec in enumerate(specs):
         root = spec.path
+        source = _skill_source_label(spec, source_prefix, root_index)
         candidates: list[Path] = []
         try:
             candidates.extend(_skill_candidates(spec))
@@ -834,6 +835,12 @@ def _read_skill(directory: Path, source: str) -> tuple[CapabilityRecord | None, 
         text = (directory / "SKILL.md").read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         return None, DiscoveryDiagnostic("unreadable_skill", "skill metadata could not be read", source)
+
+    return _parse_skill_text(text, directory, source)
+
+
+def _parse_skill_text(text: str, directory: Path, source: str) -> tuple[CapabilityRecord | None, DiscoveryDiagnostic | None]:
+    """Parse the same bytes used by discovery or selected-source recovery."""
 
     metadata = _frontmatter(text)
     if metadata is None:

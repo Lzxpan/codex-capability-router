@@ -127,6 +127,39 @@ class Beta9SkillSourceBindingTests(unittest.TestCase):
             self.assertIsNot(refreshed.snapshot.inventory, snapshot.inventory)
             self.assertEqual(snapshot.inventory.profiles[0].fingerprint != refreshed.snapshot.inventory.profiles[0].fingerprint, True)
 
+    def test_refresh_targets_changed_skill_in_either_selection_order(self) -> None:
+        for order in (("alpha", "beta"), ("beta", "alpha")):
+            for changed in (("beta",), ("alpha", "beta")):
+                for metadata_changed in (False, True):
+                    with self.subTest(order=order, changed=changed, metadata=metadata_changed), tempfile.TemporaryDirectory() as temporary:
+                        root = Path(temporary)
+                        for name in ("alpha", "beta"):
+                            (root / name).mkdir()
+                            (root / name / "SKILL.md").write_text(f"---\nname: {name}\ndescription: original\n---\nbefore\n", encoding="utf-8")
+                        snapshot = refresh_skill_inventory_snapshot(build_skill_root_plan(include_fixed_global=False, runtime_extra_roots=(root,)))
+                        for name in changed:
+                            description = "changed" if metadata_changed else "original"
+                            (root / name / "SKILL.md").write_text(f"---\nname: {name}\ndescription: {description}\n---\nafter\n", encoding="utf-8")
+                        if metadata_changed or len(changed) > 1:
+                            reason = "SELECTION_REVALIDATION_REQUIRED" if metadata_changed else "HANDOFF_REJECTION_AFTER_ONE_REFRESH"
+                            with self.assertRaisesRegex(ValueError, reason):
+                                handoff_with_selected_skill_refresh(snapshot, PreliminarySelection(order))
+                        else:
+                            recovered = handoff_with_selected_skill_refresh(snapshot, PreliminarySelection(order))
+                            self.assertEqual(recovered.refresh.source_reads, 1)
+                            self.assertEqual([h.id for h in recovered.handoffs], list(order))
+                            self.assertIn("after", next(h.instructions for h in recovered.handoffs if h.id == "beta"))
+
+    def test_refresh_revalidates_changed_identity_or_handoff_gates(self) -> None:
+        for metadata in ("id: renamed\n", "controller: true\n", "routing_support: true\n", "kind: app\n", "status: disabled\n"):
+            with self.subTest(metadata=metadata), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                path = _write_skill(root, "before\n")
+                snapshot = refresh_skill_inventory_snapshot(build_skill_root_plan(include_fixed_global=False, runtime_extra_roots=(root,)))
+                path.write_text("---\nname: pdf\ndescription: Handle PDF documents\n" + metadata + "---\nafter\n", encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "SELECTION_REVALIDATION_REQUIRED"):
+                    handoff_with_selected_skill_refresh(snapshot, PreliminarySelection(("pdf",)))
+
 
 if __name__ == "__main__":
     unittest.main()

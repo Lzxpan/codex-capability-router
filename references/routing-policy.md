@@ -1,84 +1,102 @@
-# Deterministic Routing Policy
+# Routing Policy
 
-## v0.2 High-recall discovery and Skill selection
+## v0.2.0-beta.10 normative contract
 
-- Production flow is `DISCOVERY INVENTORY -> SEMANTIC CONSIDERATION POOL -> FINAL
-  SELECTION`. Trusted Skill roots are scanned by breadth first; Host exposure or
-  runtime callability is not required for Skill availability.
-- The semantic pool is built from all structurally valid, identity-resolved,
-  present Skills. Metadata quality is diagnostic rather than a selection gate. A
-  deterministic bounded digest sweep covers every pool item; no top-k retrieval or
-  tail truncation may decide which Skill the LLM can see. `skill_never_considered_total`
-  must be 0.
-- Select every Skill with any plausible task-relevant value for one or more
-  TaskAnalysis items, deliverables, constraints, quality expectations, verification
-  needs, artifact requirements, quality improvements, documentation, explanation,
-  tooling, or safety work. Clearly relevant, moderately relevant, weakly but
-  plausibly relevant, and relevant-but-overlapping Skills may all be selected.
-  There is no fixed Skill selection maximum.
-- Semantic redundancy is not an exclusion reason. Do not stop after one sufficient
-  Skill, pick an overlap-group winner, require distinct or unique value, or remove a
-  Skill because another selected Skill covers the same work item. Exclude only clearly
-  irrelevant, absent, identity-unresolvable, exact canonical duplicates, explicit task
-  constraints, controller records, routing-support records, or records rejected by a
-  later full-handoff safety boundary. Readiness negatives remain selectable when
-  presence is established.
-- Final applicability checks preserve the LLM's plausible-relevance decision and do
-  not impose a materiality, distinctness, or non-redundancy threshold. At most one
-  bounded Skill Coverage Check may inspect remaining candidates; a relevant addition
-  may be added even when another Skill already supports the same work item. The
-  addition's `supports` and `distinct_value` fields are bounded public audit evidence,
-  not a claim that the Skill must be semantically unique.
-- Trusted-root discovery plus full handoff establish Skill availability; Host
-  exposure is optional observation and never a formal Skill gate. Unknown
-  profiles may appear only as possible-relevance diagnostics and never enter
-  handoff or formal coverage completion.
-- The historical primary/optional policy below remains read compatibility for
-  deprecated catalog data; it does not govern the v0.2 `route()` path.
+This section and the current SKILL.md govern production `route()`. The historical
+compatibility section below does not constrain current selection or rendering.
 
-## v0.2 Supporting Provider selection override
+1. The Host creates TaskAnalysis and supplies trusted roots, active Plugin paths,
+   and available Host capability metadata. Python discovers, canonicalizes,
+   validates, fingerprints, and batches; it does not perform semantic selection.
+2. Every present, identity-resolved candidate is staged. Metadata quality
+   (`SUFFICIENT`, `SPARSE`, `OPAQUE`) and negative readiness do not exclude it.
+   Unknown existence remains diagnostic; unknown Host hierarchy becomes
+   `host_tool`, never an inferred App/MCP/native kind.
+3. Select any Skill or Provider with plausible task-relevant value. Overlap,
+   materiality, uniqueness, another sufficient capability, and fixed top-k limits
+   are not exclusion rules. Exclude only clearly irrelevant, absent, unresolved,
+   exact canonical duplicates, controller/routing-support, explicit constraints,
+   or later unsafe handoff. In doubt between a plausibly useful capability and
+   omission, select it. There is no fixed Skill selection maximum or Provider maximum.
+4. Skills define methods; formal Provider kinds are `app`, `mcp`,
+   `builtin_tool`, and `host_tool`. Plugin is provenance, not a Provider.
+   Presence, selection, readiness, authorization, invocation, and success are
+   distinct states.
+5. Preserve one bounded Skill Coverage Check and one bounded Supporting Coverage
+   Check. The public `distinct_value` field describes a contribution; it does not
+   require semantic uniqueness. No retry loop or expanded authority is implied.
+6. Handoff reads the selected authoritative source. A mismatch carries its exact
+   canonical Skill ID. One targeted refresh is allowed; changed public metadata
+   or identity requires `SELECTION_REVALIDATION_REQUIRED`. A further mismatch
+   returns `HANDOFF_REJECTION_AFTER_ONE_REFRESH`.
+7. Production presentation reads `selected_skills`, `selection_status`,
+   `selected_supporting_capabilities`, `supporting_selection_status`,
+   TaskAnalysis, public reasons, and coverage/readiness evidence. It never derives
+   selection from rejected candidates or historical primary/optional fields.
 
-- Formal kinds are `app`, `mcp`, `builtin_tool`, and `host_tool`; Plugin is a
-  provenance container, not a Provider. Active Plugin manifests may contribute
-  child Skill, App, and MCP records to their corresponding inventories. App/MCP
-  child tools do not become builtin Providers.
-- Discovery evidence, presence, and readiness are separate. A trusted Host-native
-  top-level registry entry may become a generic `builtin_tool`; official App/MCP
-  and trusted configured inventories remain their own formal kinds.
-- All present, resolved Provider digests enter a deterministic bounded semantic
-  sweep, including sparse or opaque metadata. Unknown Host hierarchy uses the
-  `host_tool` fallback; no top-k truncation may starve a Provider;
-  `provider_never_considered_total` must be 0.
-- Select every selectable Provider with plausible material and non-redundant value
-  for one or more Execution Needs. There is no fixed Provider selection maximum.
-- `PRESENT_UNVERIFIED` and `KNOWN_UNAVAILABLE` remain selectable when presence
-  and identity are resolved; readiness uncertainty is recorded for execution
-  rather than used as a semantic exclusion.
-- A Provider description or understandable tool title/summary improves metadata
-  quality but is not a consideration gate. Python must not infer Provider
-  categories, rank Providers, or map keywords to Provider IDs.
-- One bounded Supporting Coverage Check may inspect remaining selectable
-  Providers and add distinct Providers. Each addition must cite one original
-  `execution_need` and a public `distinct_value`; no second check or expanded
-  provider loop is allowed.
-- A generic local execution Provider and a specialized image, diagram, document,
-  research, validation, or publication Provider are not redundant solely because
-  they can contribute to the same final artifact; semantic distinction remains
-  the Codex/LLM decision.
+## Observed batch decision protocol
 
-## Selection tie-break and execution boundary
+Preparation only stages digests. It reports zero semantic decisions. Host callers
+obtain `context.inventory_sweep` (also exposed by `context.to_mapping()`) and
+return batches through `SelectionRouteInput.skill_batch_decisions` and
+`supporting_batch_decisions`.
 
-- `WHEN IN DOUBT BETWEEN A PLAUSIBLY USEFUL CAPABILITY AND NOT SELECTING IT,
-  SELECT IT.` Only clearly irrelevant, constraint-violating, absent,
-  identity-unresolvable, exact canonical duplicates, explicitly constrained,
-  controller, or routing-support records are excluded before semantic selection.
-- Readiness, callability, authorization, and connection uncertainty never remove
-  a present capability from semantic consideration. Execution remains conservative:
-  permission, authorization, network, write/delete/send/publish safety, and runtime
-  errors are enforced after selection and recorded separately.
-- Python may parse, canonicalize, exact-dedupe, validate metadata, batch, and
-  fingerprint. It must not map keywords to IDs, rank semantic relevance, or decide
-  whether a Provider is an image/document/diagram match.
+Each response has exactly these fields:
+
+```json
+{
+  "task_fingerprint": "<skill_context.context_fingerprint>",
+  "sweep_fingerprint": "<corresponding context.inventory_sweep.fingerprint>",
+  "batch_index": 0,
+  "dispositions": {
+    "candidate-id": "selected",
+    "another-candidate-id": "not_selected",
+    "unresolved-candidate-id": "needs_detail"
+  }
+}
+```
+
+The IDs above are placeholders, not routing recommendations. Every ID from that
+batch must appear exactly once. Host judgments must determine the dispositions;
+Python must not manufacture them from a final selection list.
+
+- Fingerprints bind the TaskAnalysis/context and digest contents, including Skill
+  source fingerprints. Provider sweep fingerprints additionally bind Execution
+  Needs. Responses cannot be reused across changed tasks or snapshots.
+- Missing whole batches are allowed and remain `PARTIAL`. Missing/extra IDs
+  inside a response, duplicate batch indices, invalid dispositions, and conflicts
+  with final selected IDs are rejected.
+- `selected` and `not_selected` are resolved decisions. `needs_detail` is a
+  received but unresolved decision; it cannot accompany a final selected ID.
+- `*_staged_total`, `*_decision_received_total`,
+  `*_semantically_considered_total`, `*_never_considered_total`,
+  `*_unresolved_total`, and `*_selected_total` describe different evidence.
+  Never-considered counts missing responses; unresolved includes missing responses
+  and `needs_detail`. The nested `decision_coverage` retains public dispositions.
+- Coverage is `COMPLETE` only when no staged candidate is unresolved, including
+  the empty-pool case. It is scoped to supplied candidates, not proof that every
+  possible source was discovered. It measures Host response completeness, not
+  LLM accuracy. Independent semantic acceptance is still required.
+- `FINALIZED` freezes a validated selection Receipt. It may coexist with
+  `PARTIAL` coverage and never proves application or execution success.
+- Legacy callers can omit batch evidence; they gain no automatic complete
+  coverage claim. Evidence supplied to route requires validated TaskAnalysis.
+  No Provider decisions are accepted when Execution Needs are empty.
+
+## Execution and integration boundary
+
+Router is read-only. The Host owns actual Skill application, Provider invocation,
+authorization, network/write/delete/send/publish controls, and ExecutionAttempt.
+Selection does not authorize execution. Installation of SKILL.md is instruction
+integration, not proof that an enforced per-task Host entry point exists.
+No persistent inventory, private arguments, credentials, or hidden chain-of-thought
+are required for this protocol.
+
+## Historical v0.1 compatibility — not normative
+
+Everything below is retained solely to interpret historical catalog artifacts.
+Its readiness gates, output fields, fixed outcomes, and presentation instructions
+must not be applied to current production routing.
 
 ## 輸出層級
 

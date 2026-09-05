@@ -2,6 +2,30 @@
 
 All notable changes to `codex-capability-router` are documented here.
 
+## v0.2.0-beta.10 — 2026-09-05
+
+Bug-fix release for the beta.9 audit's remediation phase A.
+
+- Preserve explicitly declared nested Skill roots beyond the parent's scanner depth.
+- Report unreadable roots with the correct source label and continue readable roots.
+- Refresh the changed selected Skill, independent of selection order; parse its
+  current metadata before deciding whether selection revalidation is required.
+- Separate inventory staging from observed Host decisions across discovery,
+  preparation, and finalized receipts. Missing batches or `needs_detail` remain
+  PARTIAL. Validate exact batch IDs, task and digest fingerprints, Execution Needs,
+  duplicate batches, and final-selection consistency.
+- Expose `context.inventory_sweep` and optional `skill_batch_decisions` /
+  `supporting_batch_decisions`. Existing callers without responses retain partial
+  coverage; FINALIZED does not imply complete semantic coverage.
+- Align all READMEs and current references; keep early v0.2 guidance explicitly
+  historical. Remove the broken README image reference without changing assets.
+
+Python >=3.11, no runtime dependencies. Validation and evidence boundaries:
+[beta.10 validation record](docs/validation/v0.2.0-beta.10-validation.md).
+Host automatic integration, real Provider invocation, complete installed inventory,
+semantic accuracy, performance targets, and preference learning are not established
+by this release.
+
 ## v0.2.0-beta.1
 
 Pre-release for the LLM TaskAnalysis and Supporting Capability Selection
