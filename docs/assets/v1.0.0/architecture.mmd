@@ -1,0 +1,22 @@
+flowchart TB
+    userTask(["User Task"]) --> taskAnalysis["Host TaskAnalysis"]
+    taskAnalysis --> trustedDiscovery["trusted discovery"]
+    trustedDiscovery --> skillBatches["digest batches"]
+    skillBatches --> skillDecisions["Host Skill decisions"]
+    skillDecisions --> skillHandoff["Skill handoff"]
+    skillHandoff --> skillCoverage["Skill Coverage Check"]
+    skillCoverage --> executionNeeds{"Execution Needs?"}
+    executionNeeds -->|"Non-empty"| providerBatches["Provider discovery and digest batches"]
+    providerBatches --> providerDecisions["Provider decisions"]
+    providerDecisions --> providerCoverage["Supporting Coverage Check"]
+    providerCoverage --> routeCall["route()"]
+    executionNeeds -->|"Empty: skip Providers"| routeCall
+    routeCall --> receipt["FINALIZED Receipt"]
+    receipt --> invocation["Host-authorized application and invocation"]
+    invocation --> attempt["ExecutionAttempt"]
+    classDef host fill:#FFE8DD,stroke:#B94C35,color:#18384A
+    classDef python fill:#DCF3EC,stroke:#08746F,color:#18384A
+    classDef evidence fill:#FFF0C7,stroke:#956300,color:#18384A
+    class userTask,taskAnalysis,skillDecisions,skillCoverage,executionNeeds,providerDecisions,providerCoverage,invocation host
+    class trustedDiscovery,skillBatches,skillHandoff,providerBatches,routeCall python
+    class receipt,attempt evidence

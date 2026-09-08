@@ -1,6 +1,6 @@
 # Discovery, provenance, and registry fields
 
-Current contract: `v0.2.0-beta.10`. Historical release scope lives in CHANGELOG.md
+Current contract: `v1.0.0`. Historical release scope lives in CHANGELOG.md
 and explicitly marked historical documents, not in current selection gates.
 
 ## Trusted roots and bounded traversal

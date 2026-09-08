@@ -2,6 +2,20 @@
 
 All notable changes to `codex-capability-router` are documented here.
 
+## v1.0.0 - 2026-09-08
+
+Promote `v0.2.0-beta.10` to stable `v1.0.0` without runtime behavior changes.
+
+- Refresh the Traditional Chinese homepage and matching English README with
+  portable installation, practical scenarios and accurate current contracts.
+- Add an original animal-cast hero, continuous eight-panel tutorial, four-panel
+  principles comic and version-controlled SVG/Mermaid architecture.
+- Add focused version, documentation, asset and privacy/static release checks.
+- Preserve historical beta records, tags and protocol identifiers.
+
+See the [1.0.0 validation guide](docs/validation/v1.0.0-validation.md) and
+[release notes](docs/releases/v1.0.0.md) for acceptance and remaining boundaries.
+
 ## v0.2.0-beta.10 — 2026-09-05
 
 Bug-fix release for the beta.9 audit's remediation phase A.

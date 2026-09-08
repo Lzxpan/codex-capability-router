@@ -1,143 +1,154 @@
 # Codex Capability Router
 
+**讓任務找到合適的 Skills 與 Tools。**
+
 繁體中文 | [English](README.en.md)
 
-![Codex Capability Router](docs/assets/readme-v2/router-hero.png)
+![水獺 Router 引導兔子開發者，從眾多方法與工具中組合工作計畫，貓頭鷹負責檢查結果。](docs/assets/v1.0.0/hero.png)
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
-[![Release: 0.2.0-beta.10](https://img.shields.io/badge/release-0.2.0--beta.10-f59e0b)](https://github.com/Lzxpan/codex-capability-router/releases/tag/v0.2.0-beta.10)
+[![Version: 1.0.0](https://img.shields.io/badge/version-1.0.0-168C84)](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.0.0)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-E6B13E)](LICENSE)
 
-**目前版本：`v0.2.0-beta.10`，Beta / Pre-release。**
+**目前版本：`v1.0.0`，Stable。** Runtime 功能沿用 `v0.2.0-beta.10`；這次整理正式版首頁、圖解與發布驗證。
 
-Codex Capability Router 是提供給 Codex / Host controller 的唯讀 Python library。Host 的 LLM 負責理解任務、判斷哪些 Skills 與 Providers 有幫助；Python 負責可信來源 discovery、canonical identity、完整指令 handoff、輸入驗證與不可變的 selection Receipt。
+你已經有很多 Skills 和工具，但每個任務都不一樣。修 firmware、整理 README、產生圖片、檢查測試，往往需要幾種能力一起合作。
 
-安裝 Skill 提供的是指令層整合。每個新 task 都自動觸發、完整本機 inventory、自動套用與 real Provider 執行，仍需要 Host 接線與各自的驗證；單靠安裝或 `FINALIZED` 不代表這些能力已成立。
+**Codex Capability Router 是提供給 Codex／Host 的 read-only Python library 與 Skill 指引。** 它整理可信來源中的能力，把候選交給 Host LLM 判斷，再驗證選擇、交接完整指令，留下可追溯的 Receipt。Host 指承載模型並實際操作工具的應用程式。
 
-相容性基線：`0.1.0`；保留 read-only 邊界，不輸出 private capability inventory。
+## 從這裡開始
 
-## beta.10 修正
+需要 **Git、Python 3.11+**，以及能讀取 Skills 的 Codex／Host。Python runtime dependencies 為空。
 
-- **Nested roots**：root compression 依實際 scanner 深度判斷，保留 parent 掃不到的明確 child root；不擴大成遞迴掃描。
-- **Unreadable roots**：不存在或無法讀取的 root 產生自己的 `unreadable_root` diagnostic，其他可讀來源繼續回傳。
-- **Selected Skill freshness**：一次 recovery 刷新真正變更的 canonical Skill，不再固定刷新第一筆。metadata 或 identity 改變要求 `SELECTION_REVALIDATION_REQUIRED`；再次 mismatch 仍拒絕為 `HANDOFF_REJECTION_AFTER_ONE_REFRESH`。
-- **Decision coverage**：排入批次、收到 Host 判斷、完成判斷與 selected 分開計數。500 個 digests、0 個回覆就是 staged 500、decision received 0、`PARTIAL`。
-- **目前規則**：Skills 與 Providers 都保留 plausible relevance、overlap、SPARSE/OPAQUE 與 presence/readiness 分離；舊 primary/optional contract 僅供歷史相容資料。
+### 安裝
 
-## 執行流程與分工
+以下是全新安裝；目標資料夾已存在時，Git 會拒絕覆蓋，請先確認既有安裝。
 
-![Conceptual Router architecture](docs/assets/readme-v2/router-architecture.svg)
-
-圖示是流程概念；Host 必須實際提供每個候選的判斷證據。
-
-```text
-Host TaskAnalysis
-  -> trusted Skill discovery + digest batches
-  -> Host Skill decisions + full handoff + one Skill Coverage Check
-  -> Host Execution Needs
-  -> Provider discovery + digest batches (only when needs are non-empty)
-  -> Host Provider decisions + one Supporting Coverage Check
-  -> route(SelectionRouteInput(...)) -> FINALIZED Receipt
-  -> Host application/invocation -> separate ExecutionAttempt
-```
-
-| 名稱 | 作用 |
-| --- | --- |
-| Skill | 工作方法與品質規則；讀取完整指令後，由 Host 實際套用。 |
-| Provider | `app`、`mcp`、`builtin_tool` 或 `host_tool`；由 Host 實際呼叫。 |
-| Plugin | 套件與 provenance container；本身不是可呼叫的 Provider。 |
-| Router | 驗證與交接；不自行呼叫 LLM 或選定 endpoint。 |
-
-不使用 top-k 截斷、不設固定選取數量、不因 overlap 排除 plausible task-relevant 能力。`SUFFICIENT`、`SPARSE`、`OPAQUE` 都可進入候選池。已確認 presence 與 identity 的能力，即使 readiness 未知或不可用，仍可被考慮；執行時保留原本的權限與安全邊界。未知 Host hierarchy 保留為 `host_tool`，不猜成 App 或 MCP。
-
-## Coverage 的正確讀法
-
-| 欄位 / 狀態 | 證明範圍 |
-| --- | --- |
-| `*_staged_total` | 已排入 deterministic digest batches 的候選數。 |
-| `*_decision_received_total` | Host 已回傳且通過 schema / task / snapshot 驗證的候選數。 |
-| `*_semantically_considered_total` | 回覆已給出 `selected` 或 `not_selected`，沒有停在 `needs_detail` 的候選數。 |
-| `*_never_considered_total` | 尚未收到 Host 回覆的候選數。 |
-| `*_unresolved_total` | 沒有回覆或仍為 `needs_detail` 的候選數。 |
-| `*_semantic_coverage_status=COMPLETE` | 本次已提供候選池全部有最終 disposition；不證明 LLM 判斷正確，也不證明 discovery 找到外界所有能力。 |
-| `selection_state=FINALIZED` | selection Receipt 已完成；可以同時是 coverage `PARTIAL`。 |
-
-Host 從 `skill_context.inventory_sweep` 與 `supporting_context.inventory_sweep` 取得 batches，將逐批結果透過 `SelectionRouteInput.skill_batch_decisions` / `supporting_batch_decisions` 交回。每批需包含相同 Skill context 的 `task_fingerprint`、對應 sweep 的 `sweep_fingerprint`、零起算 `batch_index` 與完整 `dispositions` mapping。漏回整批保留 PARTIAL；批內缺項、額外 IDs、重複批次、矛盾選擇與跨 task / snapshot 回覆會被拒絕。Provider sweep 另綁定 Execution Needs。
-
-這是 Host 回報的公開 disposition，不是 Python 自行完成語意理解，也不要求 hidden chain-of-thought。詳見 [目前 routing contract](references/routing-policy.md) 與 [使用指南](docs/v0.2_user_guide.zh-TW.md)。
-
-## Discovery 與 cache
-
-固定 global roots 為 `$HOME/.agents/skills` 與 `$CODEX_HOME/skills`；後者只額外支援明確的 `.system` child。Plugin 僅走已解析的 active package 與 manifest-declared paths。未知 subtree、共同 Plugin cache ancestor 與全磁碟不在搜尋範圍。
-
-`RootPlanSnapshot` / `SkillInventorySnapshot` 是 caller/session-owned cache。Host 在來源改變時 invalidates / refreshes；普通 route 可重用 snapshot，selected Skill handoff 仍檢查 authoritative bytes。這不是 persistent cache，也沒有偏好記憶或背景學習。
-
-CLI probes 必須先確認 Host 支援。命令不存在、unsupported、timeout 或不可讀會回報 partial，不能解讀為「沒有安裝能力」。
-
-## 安裝與本機檢查
-
-需要 Python 3.11+；runtime dependencies 為空，測試使用 standard library。
-
-### Windows / PowerShell
+**Windows PowerShell**
 
 ```powershell
-$skillRoot = Join-Path $HOME ".agents\skills\codex-capability-router"
-if (Test-Path -LiteralPath $skillRoot) {
-    if (-not (Test-Path -LiteralPath (Join-Path $skillRoot ".git"))) {
-        throw "Target exists and is not a Git checkout: $skillRoot"
-    }
-    git -C $skillRoot pull --ff-only
-} else {
-    New-Item -ItemType Directory -Force -Path (Split-Path $skillRoot) | Out-Null
-    git clone https://github.com/Lzxpan/codex-capability-router.git $skillRoot
-}
-if ($LASTEXITCODE -ne 0) { throw "Git update failed" }
-Push-Location $skillRoot
-try {
-    python -m unittest discover -s tests -q
-    if ($LASTEXITCODE -ne 0) { throw "Tests failed" }
-    python -m compileall -q codex_capability_router tests
-} finally {
-    Pop-Location
-}
+$skillRoot = Join-Path $HOME ".agents/skills/codex-capability-router"
+git clone --branch v1.0.0 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
+if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 ```
 
-### macOS / Linux
+**macOS / Linux**
 
 ```bash
 skill_root="${HOME}/.agents/skills/codex-capability-router"
-if [ -e "$skill_root" ]; then
-    [ -d "$skill_root/.git" ] || { printf '%s\n' "Target is not a Git checkout" >&2; exit 1; }
-    git -C "$skill_root" pull --ff-only || exit 1
-else
-    mkdir -p "$(dirname "$skill_root")" || exit 1
-    git clone https://github.com/Lzxpan/codex-capability-router.git "$skill_root" || exit 1
-fi
-(cd "$skill_root" && python -m unittest discover -s tests -q &&
- python -m compileall -q codex_capability_router tests)
+git clone --branch v1.0.0 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
 ```
 
-安裝指令不覆寫非 Git checkout 的既有目錄。更新此 source repository 不會自動更新其他 global Skill 安裝副本。
+讓 Host 重新載入 Skill 清單，再在 prompt 中使用：
 
-## 驗證與限制
+```text
+$codex-capability-router
+請先分析這次任務，找出合適的 Skills 與 Providers：
+幫我整理專案 README、製作圖解，並驗證內容與程式一致。
+```
 
-本次 local regression 結果與修改範圍見 [beta.10 驗證紀錄](docs/validation/v0.2.0-beta.10-validation.md)。在 repository root 可重跑：
+**看 Receipt 時先問三件事：選了什麼？候選是否都收到判斷？真正執行的結果在哪裡？**
+`FINALIZED` 代表選擇紀錄已定案；工作是否成功，要另外看 Host 的執行證據。
 
-```powershell
+安裝提供的是指令層整合。每個任務是否自動觸發 Router、能否取得完整 inventory、會不會實際套用 Skill，取決於 Host 接線；**不宣稱 automatic Host integration 已在所有環境成立**。整合端 API 與範例見[目前 contract](references/routing-policy.md)。
+
+## 一個任務，怎麼找到幫手？
+
+故事主角是兔子開發者；青綠背心的水獺是 Router 引導角色，黃色工作服的貓頭鷹代表工具檢查與 Verification。角色是流程的視覺比喻；語意判斷實際由 Host LLM 完成。
+
+![連續漫畫上半部：開發者面對能力太多的困擾，先釐清任務，再發現可信能力並逐批判斷。](docs/assets/v1.0.0/story-a.png)
+
+依每格左上角的數字閱讀：第一張 `1–4`，第二張接續 `5–8`。每張皆為左上、右上、左下、右下：
+
+1. **好多能力，從哪裡開始？** 想完成一份專案說明，眼前卻是一整桌 Skills 與 Tools。
+2. **先理解 Task。** Host 建立 TaskAnalysis，拆出工作、交付物、限制與品質要求。
+3. **打開可信的工具櫃。** Router 發現 Skills 與可用來源，整理成 digest batches；排入批次還不代表已被語意考慮。
+4. **Host 逐批判斷。** 模型根據任務決定每個候選是否有用，相關方法即使重疊也可以一起保留。
+
+![連續漫畫下半部：讀取完整方法、確認工具需要、定案選擇紀錄、實際工作，最後檢查結果並記錄證據。](docs/assets/v1.0.0/story-b.png)
+
+5. **方法讀完整，再補缺口。** 完整 Skill handoff 與一次 bounded Skill Coverage Check 之後，Host 建立 Execution Needs；有需要才判斷 Providers。
+6. **先把計畫定案。** Python 驗證 `route()` 輸入並產生 `FINALIZED` Receipt。圖中的封存資料夾記錄選擇，還不是成功證書。
+7. **真正開始工作。** Host 在原有授權下套用方法、呼叫工具，完成文件、圖像或程式工作。
+8. **看結果，留下證據。** Verification 檢查實際輸出；獨立的 `ExecutionAttempt` 記錄執行結果，與選擇 Receipt 分開。
+
+## 四個原則
+
+![四格功能漫畫：打開可信能力櫃、考慮不同品質的描述、保留多種相關方法、在授權與檢查下謹慎執行。](docs/assets/v1.0.0/principles.png)
+
+| 原則 | 實際做法 |
+| --- | --- |
+| **1. DISCOVER BROADLY** | 從明確可信 roots 與 Host metadata 發現能力，保留來源；不任意掃描整顆硬碟。 |
+| **2. CONSIDER BROADLY** | 讓 present、identity 已解析的候選進入批次。描述為 `SPARSE`／`OPAQUE` 也可保留；staged != semantically considered。 |
+| **3. SELECT GENEROUSLY** | 不使用 fixed top-k，不設 fixed Skill maximum；overlap／redundancy 不是自動排除理由。有 plausible task-relevant value 就可選。 |
+| **4. EXECUTE CAREFULLY** | 選取不等於授權、可呼叫或成功。Host 執行時仍遵守權限、連線、刪除、傳送與發布邊界。 |
+
+## Skill、Provider、Plugin 各做什麼？
+
+| 名稱 | 可以把它想成 |
+| --- | --- |
+| **Skill** | 一本工作方法：如何 debug、寫文件、review 或驗證。Host 讀取完整指令後實際套用。 |
+| **Provider** | 執行能力的來源：`app`、`mcp`、`builtin_tool`、`host_tool`。存在與 readiness 分開記錄。 |
+| **Plugin** | 裝著 Skills、Apps 或 MCP 的套件與 provenance container。**Plugin 不是 Provider。** |
+| **Host LLM** | 理解任務、判斷相關性、提出 Execution Needs 的決策者。 |
+| **Python Router** | 負責 deterministic discovery、validation、fingerprints、handoff 與 evidence；不替模型做 semantic decisions。 |
+
+無法確認 Host hierarchy 的工具保留為 `host_tool`，不猜成 App 或 MCP。已安裝、已選到、已授權、已呼叫與已成功，都是不同狀態。
+
+## 實際工作會怎麼幫忙？
+
+### Firmware debugging / implementation
+「停止出水後，面板燈還亮著。」Host 可以組合 firmware 分析、狀態機追查與 regression 方法，再選取讀檔、build 或 log 工具。Receipt 說明選了什麼；source tests 通過不等於已完成燒錄或硬體驗證。
+
+### 文件、README、圖像製作
+「讓第一次看到專案的人看懂它。」Host 可以同時保留技術寫作、視覺敘事、圖像生成與雙語檢查方法，配合 image／diagram tools 完成交付。方法選對了，還要實際看圖、檢查連結與核對事實。
+
+### 測試、code review、verification
+「這個版本可以發布了嗎？」Host 可以組合 code review、測試與發布檢查方法，把觀察到的結果連回要求；遇到缺失證據，就清楚標出尚未驗證的部分，而不是把選擇完成當作測試通過。
+
+## 架構：誰判斷，誰驗證？
+
+![1.0.0 架構流程：Host 負責語意決策，Python Router 整理與驗證證據，Receipt 之後才由 Host 執行並記錄 ExecutionAttempt。](docs/assets/v1.0.0/architecture.svg)
+
+珊瑚色表示 **Host LLM = semantic decisions**；青綠色表示 **Python Router = deterministic validation / evidence**。黃色紀錄把 selection 與 execution 分開。
+
+流程保留 TaskAnalysis → trusted discovery → digest batches → Host Skill decisions → Skill handoff / Coverage Check → Execution Needs → Provider decisions → `route()` → FINALIZED Receipt → Host execution → ExecutionAttempt。Execution Needs 為空時跳過 Provider 路徑；Supporting Coverage Check 最多一次。
+
+可版本控制的 [Mermaid source](docs/assets/v1.0.0/architecture.mmd) 與 [SVG](docs/assets/v1.0.0/architecture.svg) 隨 repo 提供，不需要 Figma 帳號即可閱讀。
+
+## Receipt 怎麼讀？
+
+| 欄位／狀態 | 能證明什麼 |
+| --- | --- |
+| `STAGED` | 已排入批次的候選數。 |
+| `DECISION_RECEIVED` | 已收到且驗證有效的 Host disposition 數。 |
+| `SEMANTICALLY_CONSIDERED` | 已有 `selected` 或 `not_selected` 判斷的候選數。 |
+| `NEVER_CONSIDERED` | 尚未收到 Host 回覆的候選數。 |
+| `UNRESOLVED` | 尚未回覆，或仍停在 `needs_detail` 的候選數。 |
+| `COMPLETE` / `PARTIAL` | 本次提供的候選是否全部有明確判斷。不是全世界能力的 discovery 完整性，也不是模型判斷正確率。 |
+| `FINALIZED` | selection Receipt 已驗證並凍結；可同時是 `PARTIAL`。**FINALIZED != execution success。** |
+| `ExecutionAttempt` | Host 另外記錄的執行結果，不能從 Receipt 自動推定。 |
+
+例如，一批候選完全沒收到回覆，就仍是 `PARTIAL`，不能把 staged count 當作 considered count。Host batch decisions 必須綁定 task／sweep fingerprints 與 batch index；缺整批保留 PARTIAL，批內缺項或矛盾結果會被拒絕。
+
+## 安全邊界與已知限制
+
+- **唯讀 Router。** 不執行工具、不安裝能力、不進行 network discovery，也不替 Host 授權；不應輸出 private capability inventory、credentials、private paths 或 hidden reasoning。
+- **只走可信來源。** 明確 roots、受控的 `.system` child、已解析的 active Plugin paths 與可信 Host snapshot；不是無界遞迴掃描。
+- **一次 targeted Skill freshness recovery。** Handoff 檢查實際選定來源的內容。最多一次 refresh；公開 metadata／identity 改變時要求 `SELECTION_REVALIDATION_REQUIRED`，再度 mismatch 則回傳 `HANDOFF_REJECTION_AFTER_ONE_REFRESH`。
+- **caller/session-owned cache。** `RootPlanSnapshot` 與 `SkillInventorySnapshot` 的生命週期由呼叫端管理；Router 不提供 persistent preference learning，也不會背景學習使用偏好。
+- **Host integration 有範圍。** Presence 不保證 readiness。完整 inventory、模型判斷品質、各 Provider 執行與硬體結果，需要各自的實測證據。
+
+## 維護與驗證
+
+```bash
 python -m unittest discover -s tests -q
 python -m compileall -q codex_capability_router tests
-git diff --check
+python scripts/verify_release.py
 ```
 
-Local tests 驗證 deterministic contract、temporary fixture discovery、一次 freshness recovery、Host 回覆驗證與正式 route。Host 每次自動觸發、自然語言盲測準確率、完整 App/MCP inventory、real Provider、production、hardware 與 GitHub browser rendering 仍為 `NOT VERIFIED`。
+macOS／Linux 若使用 `python3`，將上面的 `python` 改為 `python3`。
 
-Router 不自行 network-discover、安裝、OAuth、授權、寫入、刪除、發布或執行外部能力。`ExecutionAttempt` 與 selection Receipt 分開保存，不能把 selected 當成已成功執行。
+目前 contract 的功能基線為 beta.10；`0.1.0` 相容性與歷史 beta 資料仍保留，歷史欄位不能取代目前 selection contract。
 
-## 文件
-
-- [English README](README.en.md)
-- [使用指南與歷史 v0.2 範例](docs/v0.2_user_guide.zh-TW.md)
-- [Routing policy](references/routing-policy.md)
-- [Discovery / provenance](references/discovery-and-provenance.md)
-- [Changelog](CHANGELOG.md)
-- [MIT License](LICENSE)
+[CHANGELOG](CHANGELOG.md) · [正式版驗證說明](docs/validation/v1.0.0-validation.md) · [發布說明](docs/releases/v1.0.0.md) · [Discovery](references/discovery-and-provenance.md) · [Routing contract](references/routing-policy.md) · [MIT License](LICENSE)

@@ -3,7 +3,7 @@ name: codex-capability-router
 description: Use when starting a work task that benefits from trusted capability discovery and selection.
 ---
 
-## Contract (beta.10)
+## Contract (1.0.0)
 
 - TaskAnalysis first; Skills explain; Providers run; Python validates.
 - Discover trusted roots, Plugin paths, and HostCapabilitySnapshot; never top-k truncate or lose recalled capabilities.

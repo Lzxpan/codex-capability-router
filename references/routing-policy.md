@@ -1,6 +1,6 @@
 # Routing Policy
 
-## v0.2.0-beta.10 normative contract
+## v1.0.0 normative contract
 
 This section and the current SKILL.md govern production `route()`. The historical
 compatibility section below does not constrain current selection or rendering.

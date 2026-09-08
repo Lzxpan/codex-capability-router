@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1500" viewBox="0 0 1000 1500" role="img" aria-labelledby="title desc">
+<title id="title">Codex Capability Router 1.0.0 architecture</title>
+<desc id="desc">User Task to Host TaskAnalysis, trusted discovery, digest batches, Host Skill decisions, Skill handoff and Coverage Check, Execution Needs, Provider decisions, route(), FINALIZED Receipt, Host execution and ExecutionAttempt. Host LLM owns semantic decisions. Python Router owns deterministic validation and evidence. Empty Execution Needs skip Providers.</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#18384A" stroke-width="1.5"/></marker></defs>
+<rect width="1000" height="1500" rx="28" fill="#FFF8ED"/>
+<g font-family="Verdana, sans-serif" fill="#18384A">
+<text x="42" y="54" font-size="28" font-weight="bold">A clear plan. Separate execution evidence.</text>
+<rect x="30" y="86" width="445" height="1302" rx="22" fill="#FFE8DD"/>
+<rect x="525" y="86" width="445" height="1302" rx="22" fill="#DCF3EC"/>
+<text x="54" y="121" font-size="25" font-weight="bold">Host LLM</text>
+<text x="54" y="148" font-size="17">semantic decisions + authorized execution</text>
+<text x="548" y="121" font-size="25" font-weight="bold">Python Router</text>
+<text x="548" y="148" font-size="17">deterministic validation / evidence</text>
+<path d="M252 234 L252 248 L252 248 L252 257" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M252 319 L252 333 L748 333 L748 342" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M748 404 L748 418 L748 418 L748 427" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M748 489 L748 503 L252 503 L252 512" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M252 574 L252 588 L748 588 L748 597" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M748 659 L748 673 L252 673 L252 682" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M252 744 L252 758 L252 758 L252 767" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M252 829 L252 843 L748 843 L748 852" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M748 914 L748 928 L252 928 L252 937" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M252 999 L252 1013 L748 1013 L748 1022" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M748 1084 L748 1098 L748 1098 L748 1107" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M748 1169 L748 1183 L252 1183 L252 1192" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M252 1254 L252 1268 L252 1268 L252 1277" fill="none" stroke="#18384A" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="52" y="178" width="400" height="56" rx="12" fill="#FFFFFF" stroke="#B94C35" stroke-width="2"/>
+<text x="252" y="213" text-anchor="middle" font-size="23" font-weight="bold">User Task</text>
+<rect x="52" y="263" width="400" height="56" rx="12" fill="#FFFFFF" stroke="#B94C35" stroke-width="2"/>
+<text x="252" y="298" text-anchor="middle" font-size="23" font-weight="bold">Host TaskAnalysis</text>
+<rect x="548" y="348" width="400" height="56" rx="12" fill="#FFFFFF" stroke="#08746F" stroke-width="2"/>
+<text x="748" y="383" text-anchor="middle" font-size="23" font-weight="bold">trusted discovery</text>
+<rect x="548" y="433" width="400" height="56" rx="12" fill="#FFFFFF" stroke="#08746F" stroke-width="2"/>
+<text x="748" y="468" text-anchor="middle" font-size="23" font-weight="bold">digest batches</text>
+<rect x="52" y="518" width="400" height="56" rx="12" fill="#FFFFFF" stroke="#B94C35" stroke-width="2"/>
+<text x="252" y="553" text-anchor="middle" font-size="23" font-weight="bold">Host Skill decisions</text>
+<rect x="548" y="603" width="400" height="56" rx="12" fill="#FFFFFF" stroke="#08746F" stroke-width="2"/>
+<text x="748" y="638" text-anchor="middle" font-size="23" font-weight="bold">Skill handoff</text>
+<rect x="52" y="688" width="400" height="56" rx="12" fill="#FFFFFF" stroke="#B94C35" stroke-width="2"/>
+<text x="252" y="723" text-anchor="middle" font-size="23" font-weight="bold">Skill Coverage Check</text>
+<rect x="52" y="773" width="400" height="56" rx="12" fill="#FFFFFF" stroke="#B94C35" stroke-width="2"/>
+<text x="252" y="808" text-anchor="middle" font-size="23" font-weight="bold">Execution Needs</text>
+<rect x="548" y="858" width="400" height="56" rx="12" fill="#FFFFFF" stroke="#08746F" stroke-width="2"/>
+<text x="748" y="893" text-anchor="middle" font-size="19" font-weight="bold">Provider discovery + digest batches</text>
+<rect x="52" y="943" width="400" height="56" rx="12" fill="#FFFFFF" stroke="#B94C35" stroke-width="2"/>
+<text x="252" y="978" text-anchor="middle" font-size="19" font-weight="bold">Provider decisions + Coverage Check</text>
+<rect x="548" y="1028" width="400" height="56" rx="12" fill="#FFFFFF" stroke="#08746F" stroke-width="2"/>
+<text x="748" y="1063" text-anchor="middle" font-size="23" font-weight="bold">route()</text>
+<rect x="548" y="1113" width="400" height="56" rx="12" fill="#FFF0C7" stroke="#956300" stroke-width="2"/>
+<text x="748" y="1148" text-anchor="middle" font-size="23" font-weight="bold">FINALIZED Receipt</text>
+<rect x="52" y="1198" width="400" height="56" rx="12" fill="#FFFFFF" stroke="#B94C35" stroke-width="2"/>
+<text x="252" y="1233" text-anchor="middle" font-size="23" font-weight="bold">Host application / invocation</text>
+<rect x="52" y="1283" width="400" height="56" rx="12" fill="#FFF0C7" stroke="#956300" stroke-width="2"/>
+<text x="252" y="1318" text-anchor="middle" font-size="23" font-weight="bold">ExecutionAttempt</text>
+<text x="50" y="1430" font-size="20">Empty Execution Needs: skip Provider discovery and decisions.</text>
+<text x="50" y="1466" font-size="20">FINALIZED can be PARTIAL. Selection never proves execution success.</text>
+</g></svg>
