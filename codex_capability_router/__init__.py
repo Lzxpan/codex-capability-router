@@ -64,7 +64,13 @@
 # 修改紀錄（2026-09-04，Codex）
 # 修改原因：beta.9 修正 canonical Skill 多 physical source 的 handoff freshness 綁定。
 # 修改後功能：公開 v0.2.0-beta.9 version；selection/discovery semantics 不變。
-__version__ = "1.0.0"
+__version__ = "1.0.1"
+
+from .preferences import PreferenceSnapshot, SkillPreference, SkillPreferenceInput
+from .preference_store import (
+    PreferenceWriteResult, clear_preferences, load_preferences,
+    set_preference_enabled, update_preferences,
+)
 
 from .registry import classify_capability, deduplicate_registry
 from .host_exposure import (
@@ -189,6 +195,8 @@ from .reconciliation import (
 from .task_analysis import TaskAnalysis, validate_task_analysis
 
 __all__ = [
+    "PreferenceSnapshot", "SkillPreference", "SkillPreferenceInput", "PreferenceWriteResult",
+    "load_preferences", "update_preferences", "set_preference_enabled", "clear_preferences",
     "__version__",
     "classify_capability",
     "deduplicate_registry",

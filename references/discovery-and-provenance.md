@@ -1,6 +1,6 @@
 # Discovery, provenance, and registry fields
 
-Current contract: `v1.0.0`. Historical release scope lives in CHANGELOG.md
+Current contract: `v1.0.1`. Historical release scope lives in CHANGELOG.md
 and explicitly marked historical documents, not in current selection gates.
 
 ## Trusted roots and bounded traversal
@@ -69,4 +69,17 @@ Localized Function metadata has an explicit unavailable fallback when absent.
 
 Source labels are abstract. Do not emit private absolute paths, credentials,
 tokens, raw private task inputs, or hidden reasoning. Inventory persistence and
-Host/controller preference storage are outside this library's read-only scope.
+Host/controller preference storage are outside `route()`'s read-only scope.
+The optional `preference_store` module provides explicit Host-called local JSON
+IO for pattern/Skill associations only. It does not persist inventory, source
+bindings, private paths or instructions, and does not change inventory cache
+fingerprints. Preference identities are rechecked against current discovery and
+the existing full handoff boundary on every route; memory is not availability
+evidence. See [preference contract](routing-policy.md#skill-preference-memory-v101).
+
+The Host freezes normal Skill batch decisions and base selection before first
+loading preference metadata. Optional `preference_evidence` records additions
+separately as `MEMORY_ADDED`; original `MODEL_SELECTED` / `USER_SPECIFIED`
+provenance and batch accounting remain intact. This is selection evidence, not
+execution success. Learning reuses current production eligibility to reject
+controller/routing-support targets, even if explicitly named by the user.
