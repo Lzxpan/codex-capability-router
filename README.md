@@ -6,15 +6,15 @@
 
 ![水獺 Router 引導兔子開發者，從眾多方法與工具中組合工作計畫，貓頭鷹負責檢查結果。](docs/assets/v1.0.0/hero.png)
 
-[![Version: 1.0.1](https://img.shields.io/badge/version-1.0.1-168C84)](CHANGELOG.md)
+[![Version: 1.0.0](https://img.shields.io/badge/version-1.0.0-168C84)](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.0.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-E6B13E)](LICENSE)
 
-**目前版本：`v1.0.1` Stable。** 如果某類工作你常手動補同一個 Skill，Router 可以記住這個習慣，下次相似工作自動補選。這項功能稱為 [Skill Preference Memory](#skill-preference-memoryv101)，保留 v1.0.0／`v0.2.0-beta.10` 的正常 semantic selection 與安全驗證。
+**目前版本：`v1.0.0`，Stable。** Runtime 功能沿用 `v0.2.0-beta.10`；這次整理正式版首頁、圖解與發布驗證。
 
 你已經有很多 Skills 和工具，但每個任務都不一樣。修 firmware、整理 README、產生圖片、檢查測試，往往需要幾種能力一起合作。
 
-**Codex Capability Router 是提供給 Codex／Host 的 read-only routing 與 Skill 指引。** 它整理可信來源中的能力，把候選交給 Host LLM 判斷，再驗證選擇、交接完整指令，留下可追溯的 Receipt。Host 指承載模型並實際操作工具的應用程式。
+**Codex Capability Router 是提供給 Codex／Host 的 read-only Python library 與 Skill 指引。** 它整理可信來源中的能力，把候選交給 Host LLM 判斷，再驗證選擇、交接完整指令，留下可追溯的 Receipt。Host 指承載模型並實際操作工具的應用程式。
 
 ## 從這裡開始
 
@@ -24,13 +24,11 @@
 
 以下是全新安裝；目標資料夾已存在時，Git 會拒絕覆蓋，請先確認既有安裝。
 
-以下指令安裝 Stable v1.0.1，包含 Skill Preference Memory。
-
 **Windows PowerShell**
 
 ```powershell
 $skillRoot = Join-Path $HOME ".agents/skills/codex-capability-router"
-git clone --branch v1.0.1 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
+git clone --branch v1.0.0 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
 if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 ```
 
@@ -38,7 +36,7 @@ if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 
 ```bash
 skill_root="${HOME}/.agents/skills/codex-capability-router"
-git clone --branch v1.0.1 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
+git clone --branch v1.0.0 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
 ```
 
 讓 Host 重新載入 Skill 清單，再在 prompt 中使用：
@@ -133,75 +131,13 @@ $codex-capability-router
 
 例如，一批候選完全沒收到回覆，就仍是 `PARTIAL`，不能把 staged count 當作 considered count。Host batch decisions 必須綁定 task／sweep fingerprints 與 batch index；缺整批保留 PARTIAL，批內缺項或矛盾結果會被拒絕。
 
-## Skill Preference Memory（V1.0.1）
-
-Memory 記住「工作類型 → 使用者偏好的 Skill」。下次相似工作若正常選取尚未包含它，Host 可依偏好補入，並標記為 `MEMORY_ADDED`。
-
-| 工作類型 | 使用者常手動補選的 Skill | 下次相似工作 |
-| --- | --- | --- |
-| 修改程式 | `code-comments` | 未選到時可依偏好補入 |
-| 繁體中文文件／說明 | `humanizer-zh` | 未選到時可依偏好補入 |
-| 完成實質專案工作 | `work-log` | 未選到時可依偏好補入 |
-
-這些只是使用習慣的例子，不是預植規則或預先建立的記憶。Host LLM 負責判斷通用 task pattern、哪些使用者要求值得記憶，以及新工作是否相似。Python 不做 keyword → Skill mapping，也不以固定次數門檻決定偏好。
-
-### 使用流程
-
-```text
-User Task
-→ Normal Skill Selection
-→ Freeze Base Selection
-→ Load Skill Preference Memory
-→ Host 判斷適用偏好
-→ Memory Additions
-→ Validation / Handoff
-→ FINALIZED Receipt
-```
-
-Host 先完成 TaskAnalysis、discovery 與正常 batch decisions，凍結 base selection 後才首次讀取 preference snapshot。Memory 只補選，不取代正常 semantic selection，也不改寫原始 batch dispositions 或計數，因此不污染 `MODEL_SELECTED` 的來源紀錄。
-
-使用者本輪明確指定／排除優先。已選到的 Skill 不會重複加入；每個 Memory addition 仍須通過 identity / eligibility / handoff / freshness validation。Memory 損壞、Skill 不存在或補選不安全時，留下診斷並繼續正常 routing；原始選取的安全錯誤仍會失敗。Memory 空白或關閉時保留原有 Receipt 與 fingerprint。
-
-`preference_evidence` 說明選取來源（provenance）：
-
-| 來源 | 意義 |
-| --- | --- |
-| `MODEL_SELECTED` | 正常 semantic selection 本身選到的 Skill。 |
-| `USER_SPECIFIED` | 使用者本輪明確指定或手動補選。 |
-| `MEMORY_ADDED` | base selection 凍結後，依過去使用者偏好補入。 |
-
-**`MEMORY_ADDED` 不代表已執行成功。** 例如選到 `work-log`，仍需由 Host 實際套用方法並另外提供執行證據。
-
-### 記什麼，存在哪裡？
-
-只記 Skill 選用偏好，不記工作內容：不保存 raw prompt、source code、bug、solution、project details、private paths、credentials 或 hidden reasoning。
-
-使用者起始指定（`USER_SPECIFIED`）與後續手動補選（`USER_MANUALLY_ADDED`）可交由 Host 判斷是否形成偏好。`MODEL_SELECTED` 不會建立使用者偏好；已確認實際使用的 Memory addition 只更新既有關聯日期，不增加使用者訊號次數。Controller／routing-support Skill（包括 Router 本身）不會被學成偏好：學習 API 使用當輪 `skill_inventory` 與 production eligibility 逐筆檢查，同批合法偏好仍可更新，inventory 不會持久化。
-
-預設本機位置為 `$CODEX_HOME/capability-router/skill-preferences.json`；未設定 `CODEX_HOME` 時，使用 `$HOME/.codex/capability-router/skill-preferences.json`。JSON 只存 `task_pattern`、`preferred_skill_id`、`learned_from`、`use_count`、`last_used`、`enabled`，最多 256 筆／256 KiB，保留至刪除。沒有 cloud memory，也不混入 Skill inventory cache。
-
-可直接用文字編輯器查看 JSON，或由能匯入本套件的 Host 使用以下管理操作。`key` 是檔案內某筆既有的 `(task_pattern, preferred_skill_id)`；`None` 表示使用預設位置。
-
-| 操作 | API |
-| --- | --- |
-| 查看 | `load_preferences().to_mapping()` |
-| 停用單筆 | `set_preference_enabled(None, key, False)` |
-| 重新啟用單筆 | `set_preference_enabled(None, key, True)` |
-| 刪除單筆 | `clear_preferences(key=key)` |
-| 全部清除 | `clear_preferences()` |
-
-停用會保留資料，學習流程不會自行重新啟用；清除會移除關聯。Host 應檢查更新結果的 `written` 與 `diagnostics`。`route()` 保持唯讀：Host 在 base selection 完成後呼叫 `load_preferences()`，以 `SkillPreferenceInput` 傳入適用關聯；學習另呼叫 `update_preferences()`。Host 也須在寫入前確認 pattern 不含專案或私人語意，格式檢查無法代替這項判斷。
-
-本版已有獨立 Host 跨任務 recall 驗收；其他 Host 仍需依此流程接入讀取、比對與輸入建構，不宣稱每個環境都會自動觸發。詳細 [API 與資料契約](references/routing-policy.md#skill-preference-memory-v101)及[驗收邊界](docs/validation/v1.0.1-validation.md)另列。V1.0.0 圖解保留原始 routing 流程，本節補充偏好階段。
-
 ## 安全邊界與已知限制
 
 - **唯讀 Router。** 不執行工具、不安裝能力、不進行 network discovery，也不替 Host 授權；不應輸出 private capability inventory、credentials、private paths 或 hidden reasoning。
 - **只走可信來源。** 明確 roots、受控的 `.system` child、已解析的 active Plugin paths 與可信 Host snapshot；不是無界遞迴掃描。
 - **一次 targeted Skill freshness recovery。** Handoff 檢查實際選定來源的內容。最多一次 refresh；公開 metadata／identity 改變時要求 `SELECTION_REVALIDATION_REQUIRED`，再度 mismatch 則回傳 `HANDOFF_REJECTION_AFTER_ONE_REFRESH`。
-- **caller/session-owned cache。** `RootPlanSnapshot` 與 `SkillInventorySnapshot` 的生命週期由呼叫端管理；persistent preference learning 由獨立 Host-called local storage API 提供，不混入 inventory cache，也不會背景學習。
+- **caller/session-owned cache。** `RootPlanSnapshot` 與 `SkillInventorySnapshot` 的生命週期由呼叫端管理；Router 不提供 persistent preference learning，也不會背景學習使用偏好。
 - **Host integration 有範圍。** Presence 不保證 readiness。完整 inventory、模型判斷品質、各 Provider 執行與硬體結果，需要各自的實測證據。
-- **既有 Provider diagnostic 限制。** 準備階段的 `provider_selected_total` 可能與最終 `selected_count`／Provider 清單不同；以 finalized selection 清單為準，本版保留這項 diagnostic inconsistency。
 
 ## 維護與驗證
 
@@ -213,6 +149,6 @@ python scripts/verify_release.py
 
 macOS／Linux 若使用 `python3`，將上面的 `python` 改為 `python3`。
 
-目前 contract 在 beta.10／V1.0 正常 routing 基礎上加入 Skill Preference Memory；`0.1.0` 相容性與歷史 beta 資料仍保留，歷史欄位不能取代目前 selection contract。
+目前 contract 的功能基線為 beta.10；`0.1.0` 相容性與歷史 beta 資料仍保留，歷史欄位不能取代目前 selection contract。
 
-[CHANGELOG](CHANGELOG.md) · [正式版驗證說明](docs/validation/v1.0.1-validation.md) · [發布說明](docs/releases/v1.0.1.md) · [Discovery](references/discovery-and-provenance.md) · [Routing contract](references/routing-policy.md) · [MIT License](LICENSE)
+[CHANGELOG](CHANGELOG.md) · [正式版驗證說明](docs/validation/v1.0.0-validation.md) · [發布說明](docs/releases/v1.0.0.md) · [Discovery](references/discovery-and-provenance.md) · [Routing contract](references/routing-policy.md) · [MIT License](LICENSE)

@@ -2,30 +2,6 @@
 
 All notable changes to `codex-capability-router` are documented here.
 
-## v1.0.1 - 2026-09-11
-
-- Add optional Skill Preference Memory: the Host LLM decides generic patterns,
-  reusable user preferences and matching associations; Python only validates.
-- Keep route read-only and add explicit Host-called local JSON learning,
-  inspection, disable/enable and deletion APIs with bounded atomic writes.
-- Preserve original Host batch decisions and old empty/disabled Receipt output;
-  add optional provenance for validated memory additions, with existing handoff
-  and freshness safety. Inventory cache and Provider protocols are unchanged.
-- Accept initial user specification and manual additions as learning evidence;
-  model selection cannot create preferences. Store only six allowlisted fields.
-- Require current Skill inventory for learning and confirmed-use updates; reuse
-  production eligibility to reject controller/routing-support targets individually
-  without blocking valid preferences in the same payload or persisting inventory.
-- Freeze normal Host batch decisions and base selection before first reading
-  preference metadata; only subsequent additions receive `MEMORY_ADDED`.
-- Verify independent cross-task recall with the installed 1.0.1 candidate: a
-  manually learned preference is loaded after base freeze in a fresh Host task.
-  This does not certify automatic interception in every Host environment.
-- Add store and route regression tests, bilingual preference management guidance
-  and release validation. Local persistence is metadata-only: no work-content
-  memory, cloud memory, or Python semantic selection.
-- Preserve the existing `provider_selected_total` diagnostic inconsistency.
-
 ## v1.0.0 - 2026-09-08
 
 Promote `v0.2.0-beta.10` to stable `v1.0.0` without runtime behavior changes.

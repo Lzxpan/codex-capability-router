@@ -3,7 +3,7 @@ name: codex-capability-router
 description: Use when starting a work task that benefits from trusted capability discovery and selection.
 ---
 
-## Contract (1.0.1)
+## Contract (1.0.0)
 
 - TaskAnalysis first; Skills explain; Providers run; Python validates.
 - Discover trusted roots, Plugin paths, and HostCapabilitySnapshot; never top-k truncate or lose recalled capabilities.
@@ -13,8 +13,6 @@ description: Use when starting a work task that benefits from trusted capability
 - Validate Host batch dispositions against task/snapshot fingerprints. Missing responses or needs_detail remain PARTIAL. FINALIZED is not coverage completion or execution proof.
 - At most one bounded Skill Coverage Check and one bounded Supporting Coverage Check.
 - Router never executes, installs, authorizes, network-discovers, persists inventory, or emits private data.
-
-- Freeze base selection and batch decisions before loading Memory. Host matches preferences; Python validates. Read the [preference contract](references/routing-policy.md#skill-preference-memory-v101) before learning or supplementation.
 
 ## References
 

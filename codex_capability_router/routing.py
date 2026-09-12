@@ -11,7 +11,6 @@ import re
 import unicodedata
 
 from .models import DiscoveryResult
-from .preferences import SkillPreferenceInput
 from .supporting_context import FORMAL_SUPPORTING_PROVIDER_KINDS
 
 # 修改紀錄（2026-08-31，Steve Peng）
@@ -105,7 +104,6 @@ class SelectionReceipt(Mapping[str, object]):
     supporting_preliminary_provider_ids: tuple[str, ...] = ()
     supporting_coverage_additions: tuple[Mapping[str, object], ...] = ()
     supporting_coverage_check_used: bool = False
-    _preference_evidence: str | None = field(default=None, repr=False)
 
     @classmethod
     def _from_route(
@@ -142,7 +140,6 @@ class SelectionReceipt(Mapping[str, object]):
         supporting_preliminary_provider_ids: tuple[str, ...] = (),
         supporting_coverage_additions: tuple[Mapping[str, object], ...] = (),
         supporting_coverage_check_used: bool = False,
-        preference_evidence: Mapping[str, object] | None = None,
     ) -> "SelectionReceipt":
         """建立 route 成功後的 receipt；外層不得直接模擬此 production result。"""
 
@@ -194,8 +191,6 @@ class SelectionReceipt(Mapping[str, object]):
             supporting_preliminary_provider_ids=tuple(supporting_preliminary_provider_ids),
             supporting_coverage_additions=tuple(dict(item) for item in supporting_coverage_additions),
             supporting_coverage_check_used=supporting_coverage_check_used,
-            _preference_evidence=(None if preference_evidence is None else
-                                  json.dumps(preference_evidence, sort_keys=True, ensure_ascii=False)),
         )
 
     def __post_init__(self) -> None:
@@ -406,11 +401,6 @@ class SelectionReceipt(Mapping[str, object]):
             _validate_provider_readiness_evidence(evidence)
 
     @property
-    def preference_evidence(self) -> dict[str, object] | None:
-        """Return a detached optional extension; old receipts omit it entirely."""
-        return None if self._preference_evidence is None else json.loads(self._preference_evidence)
-
-    @property
     def selected_skills(self) -> tuple[dict[str, object], ...]:
         """回傳不含 private instruction 的公開 selected ID/reason。"""
 
@@ -517,8 +507,6 @@ class SelectionReceipt(Mapping[str, object]):
                 "supporting_coverage_check_used": self.supporting_coverage_check_used,
             }
         )
-        if self._preference_evidence is not None:
-            result["preference_evidence"] = self.preference_evidence
         if include_fingerprint:
             result["receipt_fingerprint"] = self.receipt_fingerprint
         return result
@@ -617,15 +605,12 @@ class SelectionRouteInput:
     skill_inventory_snapshot: object | None = None
     skill_batch_decisions: tuple[Mapping[str, object], ...] = ()
     supporting_batch_decisions: tuple[Mapping[str, object], ...] = ()
-    preference_input: SkillPreferenceInput | None = None
 
     def __post_init__(self) -> None:
         """驗證 production input 的 bounded containers 與明確 Skill roots。"""
 
         if not isinstance(self.task_summary, str) or not self.task_summary.strip():
             raise ValueError("task_summary must be bounded text")
-        if self.preference_input is not None and not isinstance(self.preference_input, SkillPreferenceInput):
-            raise TypeError("preference_input requires SkillPreferenceInput")
         if not isinstance(self.skill_roots, tuple):
             object.__setattr__(self, "skill_roots", tuple(self.skill_roots))
         if any(not isinstance(root, Path) for root in self.skill_roots):
@@ -779,7 +764,6 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
         expanded_retrieve,
         handoff_full_instructions,
         handoff_with_selected_skill_refresh,
-        SkillHandoffFingerprintMismatch,
         prepare_selection,
         preliminary_select,
         validate_coverage_additions,
@@ -886,14 +870,12 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
     )
 
     preliminary = preliminary_select(preparation, request.preliminary_skill_ids)
-    selected_refresh_used = False
 
     def handoff(selected: object) -> tuple[object, ...]:
-        nonlocal inventory, skill_snapshot, selected_refresh_used
+        nonlocal inventory, skill_snapshot
         if skill_snapshot is None:
             return handoff_full_instructions(inventory, selected)  # type: ignore[arg-type]
         recovered = handoff_with_selected_skill_refresh(skill_snapshot, selected)  # type: ignore[arg-type]
-        selected_refresh_used = selected_refresh_used or bool(recovered.refresh.source_reads)
         skill_snapshot = recovered.snapshot
         inventory = recovered.snapshot.inventory
         return recovered.handoffs
@@ -1046,104 +1028,6 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
             }.issubset(selected_provider_ids):
                 raise ValueError("supporting coverage additions require final selected providers")
 
-    # Preserve actual Host decisions: supplemental memory is not a batch disposition.
-    host_selected_ids = tuple(item["id"] for item in validated["selected_skills"])
-    skill_sweep = None
-    if phase4:
-        skill_sweep = validate_sweep_decisions(
-            working_preparation.inventory_sweep, request.skill_batch_decisions,
-            task_fingerprint=request.skill_context.context_fingerprint,
-            selected_ids=host_selected_ids,
-        )
-    preference_evidence = None
-    preference = request.preference_input
-    if preference is not None and preference.enabled:
-        excluded = set(preference.excluded_skill_ids)
-        if excluded.intersection((*host_selected_ids, *request.explicit_skill_ids)):
-            raise ValueError("Host selection conflicts with explicit Skill exclusion")
-        if preference.snapshot.preferences or preference.snapshot.diagnostics or preference.matched_preferences:
-            if not phase4:
-                raise ValueError("preference evidence requires validated TaskAnalysis payloads")
-            diagnostics = [{"code": code} for code in preference.snapshot.diagnostics]
-            preference_evidence = {
-                "schema_version": 1,
-                "task_patterns": list(preference.task_patterns),
-                "task_fingerprint": request.skill_context.context_fingerprint,
-                "sweep_fingerprint": working_preparation.inventory_sweep.fingerprint,
-                "memory_fingerprint": preference.snapshot.fingerprint,
-                "host_selected_skill_ids": list(host_selected_ids),
-                "memory_additions": [],
-                "selection_provenance": [],
-                "diagnostics": diagnostics,
-            }
-            stale = (preference.task_fingerprint != request.skill_context.context_fingerprint
-                     or preference.sweep_fingerprint != working_preparation.inventory_sweep.fingerprint
-                     or preference.memory_fingerprint != preference.snapshot.fingerprint)
-            if stale:
-                diagnostics.append({"code": "MEMORY_STALE"})
-            records = {item.key: item for item in preference.snapshot.preferences}
-            pending = {}
-            candidates = {item.id for item in working_preparation.candidates}
-            needs_detail = set(skill_sweep.decision_received_ids) - set(skill_sweep.considered_ids)
-            for key in (() if stale or preference.snapshot.diagnostics else preference.matched_preferences):
-                pattern, skill_id = key
-                record = records.get(key)
-                code = ("MEMORY_KEY_MISSING" if record is None else
-                        "MEMORY_DISABLED" if not record.enabled else
-                        "MEMORY_USER_EXCLUDED" if skill_id in excluded else
-                        "MEMORY_SKILL_MISSING" if skill_id not in candidates else
-                        "MEMORY_NEEDS_DETAIL" if skill_id in needs_detail else None)
-                if code is not None:
-                    diagnostics.append({"code": code, "task_pattern": pattern, "id": skill_id})
-                elif skill_id not in host_selected_ids:
-                    pending.setdefault(skill_id, []).append(pattern)
-            memory_handoffs = {}
-            for skill_id, patterns in sorted(pending.items()):
-                try:
-                    proposed = preliminary_select(working_preparation, (skill_id,))
-                    try:
-                        instructions = handoff_full_instructions(inventory, proposed)
-                    except SkillHandoffFingerprintMismatch:
-                        if skill_snapshot is None or selected_refresh_used:
-                            raise ValueError("HANDOFF_REJECTION_AFTER_ONE_REFRESH")
-                        selected_refresh_used = True
-                        recovered = handoff_with_selected_skill_refresh(skill_snapshot, proposed)
-                        skill_snapshot, inventory = recovered.snapshot, recovered.snapshot.inventory
-                        instructions = recovered.handoffs
-                    memory_handoffs[skill_id] = instructions[0]
-                except ValueError as error:
-                    code = str(error) if str(error) in {
-                        "SELECTION_REVALIDATION_REQUIRED", "HANDOFF_REJECTION_AFTER_ONE_REFRESH"
-                    } else "MEMORY_HANDOFF_REJECTED"
-                    diagnostics.append({"code": code, "id": skill_id})
-            # Recheck the original selection outside optional-error handling.
-            analysis = decision_payloads.task_analysis
-            validate_selection(request.final_selection, inventory=inventory, handoffs=handoffs,
-                               state=state, task_analysis=analysis)
-            merged = list(validated["selected_skills"])
-            for skill_id, instructions in memory_handoffs.items():
-                item = {"id": skill_id, "reason": "Host matched an enabled user Skill preference."}
-                try:
-                    validate_selection({"task_summary": task_summary, "selected_skills": [item],
-                                        "selection_status": "selected"}, inventory=inventory,
-                                       handoffs=(instructions,), state=state, task_analysis=analysis)
-                except ValueError:
-                    diagnostics.append({"code": "MEMORY_HANDOFF_REJECTED", "id": skill_id})
-                    continue
-                merged.append(item)
-                handoffs = tuple(entry for entry in handoffs if entry.id != skill_id) + (instructions,)
-                preference_evidence["memory_additions"].append({"id": skill_id, "task_patterns": pending[skill_id]})
-            state = replace(state, handoffs=handoffs)
-            # Every member just passed the existing inventory validator; schema/state also cover the union.
-            validated = validate_selection({"task_summary": task_summary, "selected_skills": merged,
-                                            "selection_status": "selected" if merged else "no_matching_skill"},
-                                           state=state, task_analysis=analysis)
-            preference_evidence["selection_provenance"] = [
-                {"id": item["id"], "source": "USER_SPECIFIED" if item["id"] in request.explicit_skill_ids
-                 else "MODEL_SELECTED" if item["id"] in host_selected_ids else "MEMORY_ADDED"}
-                for item in validated["selected_skills"]
-            ]
-
     selected_final_ids = tuple(item["id"] for item in validated["selected_skills"])
     # Host exposure 僅是 optional observability；formal FINALIZE 仍依賴 trusted-root
     # discovery、full handoff、applicability 與 content fingerprint gates。
@@ -1252,6 +1136,11 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
                 request.possible_relevance_reasons,
                 budget_bytes=DEFAULT_POSSIBLE_RELEVANCE_SERIALIZED_BUDGET_BYTES,
             )
+        skill_sweep = validate_sweep_decisions(
+            working_preparation.inventory_sweep, request.skill_batch_decisions,
+            task_fingerprint=request.skill_context.context_fingerprint,
+            selected_ids=tuple(item["id"] for item in validated["selected_skills"]),
+        )
         skill_metrics = {
             "discovered_skill_count": len(inventory.profiles),
             "trusted_root_skill_count": len(inventory.trusted_root_skill_ids),
@@ -1330,7 +1219,6 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
         supporting_coverage_additions=tuple(item.to_mapping() for item in supporting_coverage_additions),
         supporting_coverage_check_used=request.supporting_coverage_check_used,
         supporting_metrics=supporting_metrics,
-        preference_evidence=preference_evidence,
     )
 
 

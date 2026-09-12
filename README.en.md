@@ -6,15 +6,15 @@
 
 ![An otter Router guides a rabbit developer through many methods and tools while an owl checks the results.](docs/assets/v1.0.0/hero.png)
 
-[![Version: 1.0.1](https://img.shields.io/badge/version-1.0.1-168C84)](CHANGELOG.md)
+[![Version: 1.0.0](https://img.shields.io/badge/version-1.0.0-168C84)](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.0.0)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-E6B13E)](LICENSE)
 
-**Current version: `v1.0.1` Stable.** If you often manually add the same Skill for a kind of work, the Router can remember that preference and add it for similar tasks next time. [Skill Preference Memory](#skill-preference-memory-v101) preserves normal semantic selection and safety validation from v1.0.0 / `v0.2.0-beta.10`.
+**Current version: `v1.0.0`, Stable.** Runtime behavior is unchanged from `v0.2.0-beta.10`; this release refreshes the project homepage, illustrated guides, and release validation.
 
 You already have plenty of Skills and tools. But debugging firmware, explaining a project, creating images, and checking a release often need several capabilities working together.
 
-**Codex Capability Router is a Python library with read-only routing and a Skill guide for Codex or another Host.** It organizes capabilities from trusted sources, presents candidates to the Host LLM, validates the resulting choices, hands off full instructions, and produces a traceable Receipt. The Host is the application running the model and actually operating tools.
+**Codex Capability Router is a read-only Python library and Skill guide for Codex or another Host.** It organizes capabilities from trusted sources, presents candidates to the Host LLM, validates the resulting choices, hands off full instructions, and produces a traceable Receipt. The Host is the application running the model and actually operating tools.
 
 ## Start here
 
@@ -24,13 +24,11 @@ You need **Git, Python 3.11+**, and a Codex/Host that can read Skills. There are
 
 These commands are for a fresh installation. Git refuses to overwrite an existing target; inspect that installation before updating it.
 
-The commands install Stable v1.0.1, including Skill Preference Memory.
-
 **Windows PowerShell**
 
 ```powershell
 $skillRoot = Join-Path $HOME ".agents/skills/codex-capability-router"
-git clone --branch v1.0.1 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
+git clone --branch v1.0.0 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
 if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 ```
 
@@ -38,7 +36,7 @@ if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 
 ```bash
 skill_root="${HOME}/.agents/skills/codex-capability-router"
-git clone --branch v1.0.1 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
+git clone --branch v1.0.0 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
 ```
 
 Reload the Host's Skill list, then use it in a prompt:
@@ -134,75 +132,13 @@ The version-controlled [Mermaid source](docs/assets/v1.0.0/architecture.mmd) and
 
 A batch with no response remains `PARTIAL`; do not substitute staged count for considered count. Host batch decisions bind task and sweep fingerprints plus batch index. Missing whole batches remain PARTIAL; missing items within a response or contradictory choices are rejected.
 
-## Skill Preference Memory (V1.0.1)
-
-Memory stores a relation: work type → user-preferred Skill. For a similar task, if normal selection has not already chosen it, the Host can add it with `MEMORY_ADDED` provenance.
-
-| Work type | Skill the user often adds manually | Next similar task |
-| --- | --- | --- |
-| Code modification | `code-comments` | Add from preference if not already selected |
-| Traditional Chinese documentation / explanations | `humanizer-zh` | Add from preference if not already selected |
-| Completing substantial project work | `work-log` | Add from preference if not already selected |
-
-These illustrate habits; they are not seeded rules or preloaded memories. The Host LLM decides generic task patterns, which user requests establish reusable preferences, and whether a new task is similar. Python does not perform keyword → Skill mapping or apply a fixed count threshold.
-
-### Workflow
-
-```text
-User Task
-→ Normal Skill Selection
-→ Freeze Base Selection
-→ Load Skill Preference Memory
-→ Host judges applicable preferences
-→ Memory Additions
-→ Validation / Handoff
-→ FINALIZED Receipt
-```
-
-The Host completes TaskAnalysis, discovery and normal batch decisions, then freezes base selection before first loading a preference snapshot. Memory only adds Skills; it does not replace normal semantic selection or rewrite original batch dispositions and counts. This keeps `MODEL_SELECTED` provenance tied to normal selection.
-
-Explicit user inclusions and exclusions for the current task take priority. Already-selected Skills are not duplicated; every Memory addition still passes identity / eligibility / handoff / freshness validation. Corrupt memory, missing Skills and unsafe additions produce diagnostics while normal routing continues. Safety errors in the original selection still fail. Empty or disabled Memory preserves the original Receipt and fingerprint.
-
-`preference_evidence` explains selection provenance:
-
-| Source | Meaning |
-| --- | --- |
-| `MODEL_SELECTED` | Chosen by normal semantic selection itself. |
-| `USER_SPECIFIED` | Explicitly specified or manually added by the user for this task. |
-| `MEMORY_ADDED` | Added from past user preferences after base selection was frozen. |
-
-**`MEMORY_ADDED` does not mean execution succeeded.** Selecting `work-log`, for example, still requires the Host to apply the method and provide separate execution evidence.
-
-### What is remembered, and where?
-
-Only Skill selection preferences are stored, with no work-content memory: no raw prompt, source code, bug, solution, project details, private paths, credentials or hidden reasoning.
-
-The Host may learn from initial user specification (`USER_SPECIFIED`) or later manual additions (`USER_MANUALLY_ADDED`). `MODEL_SELECTED` cannot establish a user preference. Confirmed actual use of a Memory addition only updates an existing relation's date, not its user signal count. Controller / routing-support Skills, including the Router itself, cannot be learned as preferences. The learning API checks each target using current `skill_inventory` and production eligibility; valid preferences in a mixed payload still update, and inventory is never persisted.
-
-The default local file is `$CODEX_HOME/capability-router/skill-preferences.json`, falling back to `$HOME/.codex/capability-router/skill-preferences.json` when `CODEX_HOME` is unset. JSON stores only `task_pattern`, `preferred_skill_id`, `learned_from`, `use_count`, `last_used`, `enabled`: at most 256 records / 256 KiB, retained until deletion. There is no cloud memory, and preferences remain separate from the Skill inventory cache.
-
-View the JSON in a text editor, or use these management operations from a Host that can import the package. `key` is an existing `(task_pattern, preferred_skill_id)` pair from the file; `None` selects the default location.
-
-| Action | API |
-| --- | --- |
-| View | `load_preferences().to_mapping()` |
-| Disable one | `set_preference_enabled(None, key, False)` |
-| Re-enable one | `set_preference_enabled(None, key, True)` |
-| Delete one | `clear_preferences(key=key)` |
-| Clear all | `clear_preferences()` |
-
-Disabling retains the data; learning never re-enables it automatically. Clearing removes relations. The Host should check `written` and `diagnostics` in update results. `route()` remains read-only: the Host calls `load_preferences()` after base selection and passes applicable relations in `SkillPreferenceInput`; learning separately calls `update_preferences()`. Before writing, the Host must also check that patterns contain no project or private semantics. Format validation cannot replace that judgment.
-
-This version has independent Host cross-task recall acceptance. Other Hosts must still integrate loading, matching and input construction; this is not a claim of automatic triggering in every environment. See the detailed [API and data contract](references/routing-policy.md#skill-preference-memory-v101) and [acceptance boundaries](docs/validation/v1.0.1-validation.md). Retained V1.0.0 illustrations show the original routing flow; this section adds the preference phase.
-
 ## Safety boundaries and limitations
 
 - **Read-only Router.** It does not execute tools, install capabilities, perform network discovery, or authorize the Host. It should not emit private capability inventory, credentials, private paths, or hidden reasoning.
 - **Trusted sources only.** Explicit roots, the bounded `.system` child, resolved active Plugin paths, and trusted Host snapshots. No unbounded recursive scanning.
 - **One targeted Skill freshness recovery.** Handoff checks the selected authoritative source. At most one refresh; changed public metadata or identity requires `SELECTION_REVALIDATION_REQUIRED`. A further mismatch returns `HANDOFF_REJECTION_AFTER_ONE_REFRESH`.
-- **caller/session-owned cache.** The caller owns `RootPlanSnapshot` and `SkillInventorySnapshot` lifetimes. A separate Host-called local storage API supplies persistent preference learning, without mixing it into inventory cache or learning in the background.
+- **caller/session-owned cache.** The caller owns `RootPlanSnapshot` and `SkillInventorySnapshot` lifetimes. The Router provides no persistent preference learning or background learning of user preferences.
 - **Host integration has limits.** Presence does not guarantee readiness. Complete inventory, semantic accuracy, real Provider execution, and hardware outcomes require their own evidence.
-- **Existing Provider diagnostic limitation.** Preparation-era `provider_selected_total` can differ from final `selected_count` / the Provider list. The finalized selection list is authoritative; this release preserves that diagnostic inconsistency.
 
 ## Maintenance and verification
 
@@ -214,6 +150,6 @@ python scripts/verify_release.py
 
 Use `python3` instead of `python` where that is your macOS/Linux interpreter command.
 
-The current contract adds Skill Preference Memory to normal beta.10 / V1.0 routing. Historical `0.1.0` compatibility and beta records remain available; legacy fields do not replace the current selection contract.
+The current behavior baseline is beta.10. Historical `0.1.0` compatibility and beta records remain available; legacy fields do not replace the current selection contract.
 
-[CHANGELOG](CHANGELOG.md) · [Stable validation guide](docs/validation/v1.0.1-validation.md) · [Release notes](docs/releases/v1.0.1.md) · [Discovery](references/discovery-and-provenance.md) · [Routing contract](references/routing-policy.md) · [MIT License](LICENSE)
+[CHANGELOG](CHANGELOG.md) · [Stable validation guide](docs/validation/v1.0.0-validation.md) · [Release notes](docs/releases/v1.0.0.md) · [Discovery](references/discovery-and-provenance.md) · [Routing contract](references/routing-policy.md) · [MIT License](LICENSE)
