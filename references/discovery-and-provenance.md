@@ -1,6 +1,6 @@
 # Discovery, provenance, and registry fields
 
-Current contract: `v1.0.0`. Historical release scope lives in CHANGELOG.md
+Current contract: `v1.1.3`. Historical release scope lives in CHANGELOG.md
 and explicitly marked historical documents, not in current selection gates.
 
 ## Trusted roots and bounded traversal
@@ -10,6 +10,10 @@ The controller builds a `RootPlanSnapshot` from fixed global roots
 `.system` child, known project roots, explicit runtime roots, and resolved
 active Plugin manifest paths. The scanner reads a direct Skill or immediate
 children; it never recursively walks unknown subtrees or a PluginStore ancestor.
+
+Test Skill documents are stored as `SKILL.fixture.md`, not discoverable entrypoints.
+Compatibility tests materialize `SKILL.md` only in temporary directories outside
+the installed Skill tree; packaged fixtures must not supply production handoffs.
 
 Compression removes a child only when the parent's actual traversal covers its
 declared scope. A direct immediate child may be covered by a container; nested

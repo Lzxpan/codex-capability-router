@@ -127,6 +127,13 @@ def _skill_selection(analysis, *, selected: bool = True) -> ValidatedSkillSelect
     )
 
 
+def _responses(sweep, task, selected=()):
+    """僅供受控測試 fixture：依測試已指定的選用結果建立有效 Host 批次，production 不得沿用。"""
+    return tuple({"task_fingerprint": task, "sweep_fingerprint": sweep.fingerprint,
+                  "batch_index": index, "dispositions": {identity: "selected" if identity in selected else "not_selected" for identity in batch}}
+                 for index, batch in enumerate(sweep.batches))
+
+
 class Phase4SupportingDecisionTests(unittest.TestCase):
     """驗證 Phase 4 protocol 與唯一 production route finalization。"""
 
@@ -190,6 +197,15 @@ class Phase4SupportingDecisionTests(unittest.TestCase):
             supporting_readiness_evidence=tuple(readiness_evidence),
             supporting_selection=supporting_selection,
             supporting_detail_expansion_used=supporting_detail_expansion_used,
+            # 2026-10-12 Steve Peng：此 fixture 的選用由測試指定，補足新契約要求的有效批次。
+            skill_batch_decisions=_responses(skill_context.inventory_sweep, skill_context.context_fingerprint,
+                                            tuple(item[0] for item in decision.skill_selection.selected_skills)),
+            supporting_batch_decisions=(() if support_context is None else _responses(
+                support_context.inventory_sweep, skill_context.context_fingerprint,
+                (() if decision.final_supporting_decision is None else tuple(
+                    item.canonical_provider_id for item in decision.final_supporting_decision.selected_supporting_capabilities
+                )),
+            )),
         )
 
     def _final_payload(self, selected=True, unmet=(), unmet_reason="未滿足 execution need"):

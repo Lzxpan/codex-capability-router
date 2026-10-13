@@ -7,10 +7,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import re
 
 from .models import CapabilityRecord
 from .routing import SelectionReceipt
 from .selection import validate_selection
+from .supporting_context import ExecutionAttempt
 from .validation import record_from_mapping
 
 
@@ -39,6 +41,16 @@ from .validation import record_from_mapping
 # 原始內容：正式 renderer 接受普通 selection dict，無法辨識結果是否真的經過 production route。
 # 修改原因：Integration Hardening 要求外層 hand-written result 不得被認定為 Router Receipt。
 # 修改後功能：render_recommendations 只接受 SelectionReceipt；render_selection_payload 僅保留低階 payload 渲染測試用途。
+# 修改紀錄（2026-10-07，Steve Peng）
+# 原始內容：正式輸出只有 Skill 選用，未顯示 Provider、批次覆蓋或 Host 執行回報。
+# 修改原因：選用定案不能當作覆蓋完整或執行成功；跨 Receipt 的回報也不能混入本次結果。
+# 修改後功能：保留原 API 與低階輸出，新增雙語覆蓋與逐筆 Host 回報；只接受綁定本 Receipt 的既有 ExecutionAttempt，不執行能力。
+# Host 自由文字以單行 code span 顯示，CR/LF 改為可見字元、反引號採較長 delimiter；不修改原始回報。
+
+# 修改紀錄（2026-10-08，Steve Peng）
+# 原始內容：未選 Provider 時只顯示覆蓋資料未提供，省略正式選用狀態。
+# 修改原因：not_required、selected 與 no_matching_supporting_capability 必須可分辨。
+# 修改後功能：直接呈現 Receipt 既有狀態，保留覆蓋與 Host 執行回報，不推定已執行。
 
 SUPPORTED_LANGUAGES = ("en", "zh-TW", "auto")
 
@@ -116,16 +128,108 @@ def render_recommendations(
     *,
     language: str = "en",
     user_request: str = "",
+    execution_attempts: Sequence[ExecutionAttempt] = (),
 ) -> str:
-    """只渲染 production route 產生的 SelectionReceipt。"""
+    """渲染正式 Receipt 與選填的 Host 執行回報；不推測執行或 readiness。
+
+    輸入為 route 產生的 Receipt、語言與既有 ExecutionAttempt；輸出雙語 Markdown。
+    每筆回報必須綁定相同 Receipt、已選 Provider 與原始 execution need；依輸入順序保留所有結果。
+    """
 
     if not isinstance(payload, SelectionReceipt):
         raise TypeError("production renderer requires a SelectionReceipt from route()")
-    return render_selection_payload(
+    attempts = tuple(execution_attempts)
+    receipt = payload.to_mapping()
+    providers = receipt["selected_supporting_capabilities"]
+    selected_providers = {(item["kind"], item["canonical_provider_id"]) for item in providers}
+    needs = {item["need"] for item in receipt["execution_needs"]}
+    fingerprint = payload.receipt_fingerprint
+    for attempt in attempts:
+        if not isinstance(attempt, ExecutionAttempt):
+            raise TypeError("execution_attempts must contain ExecutionAttempt values")
+        if attempt.selection_receipt_fingerprint != fingerprint:
+            raise ValueError("execution attempt does not match the selection receipt fingerprint")
+        if (attempt.provider_kind, attempt.provider_id) not in selected_providers:
+            raise ValueError("execution attempt provider must match a selected Provider kind and id")
+        if attempt.execution_need not in needs:
+            raise ValueError("execution attempt need must originate from this receipt")
+
+    locale = resolve_language(language, user_request)
+    lines = render_selection_payload(
         payload.selection_payload(),
-        language=language,
-        user_request=user_request,
-    )
+        language=locale,
+    ).splitlines()
+    if providers:
+        lines.extend(["", "## Selected Providers" if locale == "en" else "## 已選 Providers"])
+        lines.extend(
+            f"- `{item['canonical_provider_id']}` (`{item['kind']}`) — {item['purpose']}"
+            for item in providers
+        )
+    lines.extend([
+        "",
+        f"Provider selection status: `{payload.supporting_selection_status}`."
+        if locale == "en" else f"Provider 選用狀態：`{payload.supporting_selection_status}`。",
+    ])
+    # 修改紀錄（2026-10-12，Steve Peng）：原本 FINALIZED 未區分相容呼叫與結構化批次驗證。
+    # 直接依既有 TaskAnalysis 判別呼叫路徑；不新增可手填狀態，也不推論候選覆蓋或執行成功。
+    if receipt["task_analysis"] is None:
+        lines.append("Legacy compatibility: no validated TaskAnalysis or observed batch evidence; the Host selection workflow is not verified."
+                     if locale == "en" else "相容呼叫：未提供驗證過的 TaskAnalysis 與批次證據，Host 選用流程未驗證。")
+    else:
+        lines.append("Structured routing: batch evidence for final selected items is validated; candidate coverage and execution remain separate."
+                     if locale == "en" else "結構化路由：最終選用項目的批次證據已驗證；候選覆蓋與執行結果仍須分開判讀。")
+    lines.extend(["", "## Decision Coverage" if locale == "en" else "## 判斷覆蓋狀況"])
+    missing = "not provided" if locale == "en" else "未提供"
+    for label, prefix, metrics in (
+        ("Skill", "skill", payload.skill_metrics),
+        ("Provider", "provider", payload.supporting_metrics),
+    ):
+        if not metrics or f"{prefix}_semantic_coverage_status" not in metrics:
+            lines.append(f"- {label}: `{missing}`." if locale == "en" else f"- {label}：`{missing}`。")
+            continue
+        status, considered, staged, received, unresolved, never = (
+            metrics.get(f"{prefix}_{field}", missing)
+            for field in (
+                "semantic_coverage_status", "semantically_considered_total", "staged_total",
+                "decision_received_total", "unresolved_total", "never_considered_total",
+            )
+        )
+        if locale == "en":
+            lines.append(f"- {label}: `{status}`; considered {considered}/{staged}; decisions received {received}; unresolved {unresolved}; never considered {never}.")
+        else:
+            lines.append(f"- {label}：`{status}`；已判斷 {considered}/{staged}；已收到決策 {received}；未解決 {unresolved}；從未判斷 {never}。")
+    lines.extend([
+        "",
+        f"Selection state: `{payload.selection_state}`." if locale == "en" else f"選用狀態：`{payload.selection_state}`。",
+        "`FINALIZED` means selection is finalized; it does not prove coverage completion or execution."
+        if locale == "en" else "`FINALIZED` 只代表選用已定案；不代表覆蓋完整或已執行。",
+        "",
+        "## Execution Results (Host-reported)" if locale == "en" else "## 執行結果（Host 回報）",
+    ])
+    if not attempts:
+        lines.append("- No execution results reported by Host." if locale == "en" else "- Host 未回報執行結果。")
+    for attempt in attempts:
+        need_label, readiness_label = ("need", "readiness") if locale == "en" else ("需求", "就緒狀態")
+        line = f"- `{attempt.provider_id}` (`{attempt.provider_kind}`) — `{attempt.outcome}`; {need_label}: {attempt.execution_need}; {readiness_label}: `{attempt.readiness_state}`"
+        for field, en, zh in (
+            ("error_category", "error", "錯誤"), ("actual_server", "server", "伺服器"),
+            ("actual_tool", "tool", "工具"), ("app_context", "App context", "App 內容"),
+            ("plugin_id", "Plugin", "Plugin"),
+        ):
+            value = getattr(attempt, field)
+            if value is not None:
+                line += f"; {en if locale == 'en' else zh}: {_inline_host_text(value)}"
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+def _inline_host_text(value: str) -> str:
+    """將 Host 公開文字包成單行 Markdown code span；只改呈現、不改原始資料。"""
+
+    value = value.replace("\r", "\\r").replace("\n", "\\n")
+    delimiter = "`" * (1 + max((len(run) for run in re.findall(r"`+", value)), default=0))
+    padding = " " if "`" in value else ""
+    return f"{delimiter}{padding}{value}{padding}{delimiter}"
 
 
 def render_selection_payload(

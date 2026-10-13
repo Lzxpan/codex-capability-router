@@ -28,6 +28,7 @@ from codex_capability_router.supporting_context import (
     validate_supporting_decision,
 )
 from codex_capability_router.task_analysis import validate_task_analysis
+from tests.test_supporting_decision_phase4 import _responses
 
 
 def _app_responses(
@@ -297,6 +298,12 @@ class OfficialProviderAdapterTests(unittest.TestCase):
                     validated_decision_payloads=decision,
                     skill_context=skill_context,
                     supporting_context=support_context,
+                    skill_batch_decisions=_responses(
+                        skill_context.inventory_sweep, skill_context.context_fingerprint, ("app-routing-skill",)
+                    ),
+                    supporting_batch_decisions=_responses(
+                        support_context.inventory_sweep, skill_context.context_fingerprint, ("calendar_app",)
+                    ),
                     supporting_provider_declarations=app.provider_declarations,
                     supporting_readiness_evidence=app.readiness_evidence,
                     supporting_selection={
@@ -320,6 +327,12 @@ class OfficialProviderAdapterTests(unittest.TestCase):
                         validated_decision_payloads=decision,
                         skill_context=skill_context,
                         supporting_context=support_context,
+                        skill_batch_decisions=_responses(
+                            skill_context.inventory_sweep, skill_context.context_fingerprint, ("app-routing-skill",)
+                        ),
+                        supporting_batch_decisions=_responses(
+                            support_context.inventory_sweep, skill_context.context_fingerprint, ("calendar_app",)
+                        ),
                         supporting_provider_declarations=stale_app.provider_declarations,
                         supporting_readiness_evidence=stale_app.readiness_evidence,
                         supporting_selection={

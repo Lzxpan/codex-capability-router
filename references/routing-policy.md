@@ -1,6 +1,6 @@
 # Routing Policy
 
-## v1.0.0 normative contract
+## v1.1.3 normative contract
 
 This section and the current SKILL.md govern production `route()`. The historical
 compatibility section below does not constrain current selection or rendering.
@@ -63,7 +63,11 @@ Python must not manufacture them from a final selection list.
 - Fingerprints bind the TaskAnalysis/context and digest contents, including Skill
   source fingerprints. Provider sweep fingerprints additionally bind Execution
   Needs. Responses cannot be reused across changed tasks or snapshots.
-- Missing whole batches are allowed and remain `PARTIAL`. Missing/extra IDs
+- Every final selected Skill or Provider must have a received `selected`
+  disposition in its own task/sweep-bound batch. Missing selected decisions
+  fail with `selected candidates require batch evidence`, naming the missing IDs;
+  no Receipt is created. Missing whole batches containing only unselected
+  candidates are allowed and remain `PARTIAL`. Missing/extra IDs
   inside a response, duplicate batch indices, invalid dispositions, and conflicts
   with final selected IDs are rejected.
 - `selected` and `not_selected` are resolved decisions. `needs_detail` is a
@@ -79,8 +83,11 @@ Python must not manufacture them from a final selection list.
   LLM accuracy. Independent semantic acceptance is still required.
 - `FINALIZED` freezes a validated selection Receipt. It may coexist with
   `PARTIAL` coverage and never proves application or execution success.
-- Legacy callers can omit batch evidence; they gain no automatic complete
-  coverage claim. Evidence supplied to route requires validated TaskAnalysis.
+- Calls without validated TaskAnalysis retain legacy compatibility and cannot
+  submit observed batch evidence. The renderer labels them as legacy, with
+  unreported evidence. Structured calls require observed decisions for all final
+  selected items; remaining candidates may stay unresolved. Evidence supplied
+  to route requires validated TaskAnalysis.
   No Provider decisions are accepted when Execution Needs are empty.
 
 ## Execution and integration boundary
@@ -91,6 +98,282 @@ Selection does not authorize execution. Installation of SKILL.md is instruction
 integration, not proof that an enforced per-task Host entry point exists.
 No persistent inventory, private arguments, credentials, or hidden chain-of-thought
 are required for this protocol.
+
+## Host API workflow
+
+Run all four Python blocks in the same Host process. The examples reuse the
+existing public APIs and one typed inventory snapshot. `to_mapping()` is a public
+projection, not a saved context that can be loaded for finalization.
+The inventory snapshot is a typed container; use
+`inventory_snapshot.inventory`, not `inventory_snapshot.to_mapping()`.
+
+The Host supplies these inputs from the current task and session:
+
+| Input | Source |
+| --- | --- |
+| `task_analysis` | Task summary, work items, deliverables, constraints and quality expectations |
+| `host_home`, `host_codex_home` | The Host's actual user home and Codex home directories |
+| `runtime_extra_roots`, `plugin_manifests` | Trusted roots and active Plugin declarations actually exposed by the Host; empty tuples when none are supplied |
+| `host_preliminary_skill_ids` | Model judgments using the discovered candidate IDs |
+| `host_decision`, `host_final_decision` | Initial Skill selection and Execution Needs, followed by the same payload with the Host's final Supporting decision when needed |
+| `skill_batch_decisions`, `supporting_batch_decisions` | Actual Host dispositions using the prepared task and sweep fingerprints |
+| `host_registry`, `host_snapshot_id`, `host_session_scope` | Current-session tool metadata and snapshot identity |
+| `readiness_evidence` | Existing typed readiness certificates or observations; an empty tuple when readiness has not been established |
+
+`task_analysis` has exactly five fields: `task_summary` is a non-empty string;
+`work_items`, `deliverables`, `constraints` and `quality_expectations` are arrays
+of bounded public strings. Keep actual targets and authorized stages in those
+fields. Do not substitute `tasks` for `work_items` or omit an empty array.
+Receipt summary/reasons have stricter public-text validation, including slash
+rejection. Use a faithful public summary without paths; retain original interface
+names and exact requirements in work items and the original task. If validation
+fails, retain its error; changing the task requires fresh contexts and decisions.
+
+`host_decision` uses `DECISION_PAYLOAD_CONTRACT_VERSION` from `route_context`,
+the same `task_analysis`, `skill_selection` and `execution_needs`. Skill selection
+contains `task_summary`, `selected_skills` and `selection_status`; each selected
+item has a discovered `id`, a specific public `reason`, and optional indexed
+`supports` from TaskAnalysis. Each execution need contains `need` and `reason`.
+If the task actually needs tools, describe those needs; empty needs mean Provider
+selection is not required, not that tools were unavailable or unused.
+When needs exist, `host_final_decision` also includes `final_supporting_decision`
+with `selected_supporting_capabilities` and `unmet_execution_needs`.
+
+Project Host tool metadata into the documented registry fields, keeping stable
+`namespace`, `action_name`, public purpose and known hierarchy. Host descriptions
+allow up to 2,048 characters; downstream Provider descriptions allow 1,024 and
+also reject secret-like text and absolute paths. Use a faithful bounded public
+summary rather than copying full tool documentation. A nullable description can
+remain `None` when no safe public summary is established; retain that SPARSE
+candidate and consult the original trusted metadata for semantic judgment.
+Do not relax validators, remove candidates or invent hierarchy to hide an error.
+
+Before importing, check the selected runtime from a neutral directory using
+`python -X utf8 -B -I`. Add only its explicit root to `sys.path`, inspect the package's
+`__file__` and `__version__`, and verify that the loaded file belongs to that root.
+Absence of an exposed routing tool does not prove that the installed Python API
+is unavailable. Try the documented library entry; if it fails, report the actual
+import/API error and stopping point. Only `route()` can create a formal Receipt.
+Do not substitute a development checkout after an installed-runtime failure.
+Import success proves loadability only; it does not create a routing Receipt.
+
+### Prepare the actual candidates
+
+<!-- host-workflow:prepare -->
+```python
+from pathlib import Path
+from codex_capability_router.inventory import refresh_skill_inventory_snapshot
+from codex_capability_router.route_context import prepare_route_context
+from codex_capability_router.skill_plan import build_skill_root_plan
+from codex_capability_router.task_analysis import validate_task_analysis
+
+analysis = validate_task_analysis(task_analysis)
+plan = build_skill_root_plan(
+    home=Path(host_home), codex_home=Path(host_codex_home),
+    runtime_extra_roots=tuple(Path(root) for root in runtime_extra_roots),
+    plugin_manifests=plugin_manifests,
+)
+inventory_snapshot = refresh_skill_inventory_snapshot(
+    plan, plugin_manifests=plugin_manifests,
+)
+skill_context = prepare_route_context(
+    analysis, skill_roots=(), skill_root_plan=plan,
+    skill_inventory_snapshot=inventory_snapshot,
+    plugin_manifests=plugin_manifests,
+)
+candidate_batches = skill_context.inventory_sweep.to_mapping()
+candidate_details = skill_context.to_mapping()
+```
+
+The Host reads every supplied batch and records its own judgments. It must not
+slice the candidate list, manufacture dispositions from final selected IDs, or
+reuse judgments from another task. Missing batches and `needs_detail` remain
+`PARTIAL`; do not replace them with automatic `not_selected` responses.
+
+### Read the selected instructions
+
+<!-- host-workflow:handoff -->
+```python
+from codex_capability_router.selection import (
+    handoff_full_instructions, preliminary_select, prepare_selection,
+)
+
+preparation = prepare_selection(
+    inventory_snapshot.inventory, analysis.task_summary,
+    task_analysis_items=analysis.retrieval_items(), high_recall=True,
+)
+preliminary = preliminary_select(preparation, host_preliminary_skill_ids)
+handoffs = handoff_full_instructions(inventory_snapshot.inventory, preliminary)
+handoff_instructions = {item.id: item.instructions for item in handoffs}
+```
+
+The Host reads every full value in `handoff_instructions` before deciding
+Execution Needs and Providers. `FullInstructionHandoff` exposes `id`,
+`fingerprint` and `instructions`; it is not a dict and has no `skill_id` field.
+Instruction content stays in the Host's task context and must not enter public
+Receipts. Selection and handoff do not prove that a Skill's method was applied.
+If applicability changes, use the existing bounded correction or Coverage Check
+inputs before finalization; do not overwrite a finalized Receipt.
+
+### Prepare the Provider candidates
+
+<!-- host-workflow:supporting -->
+```python
+from codex_capability_router.host_snapshot import prepare_host_capability_snapshot
+from codex_capability_router.route_context import validate_decision_payloads
+from codex_capability_router.supporting_context import prepare_supporting_context
+
+decision = validate_decision_payloads(host_decision)
+if decision.skill_selection is None:
+    raise ValueError("Host final Skill selection is required")
+host_snapshot = None
+supporting_context = None
+if decision.execution_needs:
+    host_snapshot = prepare_host_capability_snapshot(
+        host_registry, snapshot_id=host_snapshot_id,
+        session_scope=host_session_scope,
+    )
+    supporting_context = prepare_supporting_context(
+        decision.execution_needs, host_capability_snapshot=host_snapshot,
+        readiness_evidence=readiness_evidence,
+        plugin_manifests=plugin_manifests,
+    )
+supporting_batches = (
+    supporting_context.to_mapping() if supporting_context is not None else None
+)
+```
+
+For both kinds of batch response, `task_fingerprint` is
+`skill_context.context_fingerprint`; `sweep_fingerprint` belongs to that batch
+context. Do not use `supporting_context.context_fingerprint` as the task fingerprint.
+
+The Host reads the supplied Provider batches and builds `host_final_decision` and
+`supporting_batch_decisions`. Retain the same prepared context. Empty Needs skip
+Provider preparation and require empty Supporting decisions.
+
+### Finalize through the existing route API
+
+<!-- host-workflow:finalize -->
+```python
+from codex_capability_router.catalog import render_recommendations
+from codex_capability_router.routing import SelectionRouteInput, route
+
+decision = validate_decision_payloads(host_final_decision)
+if decision.skill_selection is None:
+    raise ValueError("Host final Skill selection is required")
+receipt = route(SelectionRouteInput(
+    task_summary=analysis.task_summary, skill_roots=(),
+    preliminary_skill_ids=preliminary.skill_ids,
+    final_selection=decision.skill_selection.to_mapping(),
+    validated_decision_payloads=decision,
+    skill_context=skill_context, supporting_context=supporting_context,
+    skill_root_plan=plan, skill_inventory_snapshot=inventory_snapshot,
+    host_capability_snapshot=host_snapshot,
+    plugin_manifests=(plugin_manifests if supporting_context else ()),
+    supporting_readiness_evidence=(readiness_evidence if supporting_context else ()),
+    skill_batch_decisions=skill_batch_decisions,
+    supporting_batch_decisions=supporting_batch_decisions,
+))
+report = render_recommendations(receipt, language="zh-TW")
+```
+
+With empty Execution Needs, Plugin Skill declarations remain in the supplied
+Skill snapshot. Do not pass their manifests as Provider context to finalization;
+the existing lazy Provider gate rejects any Provider context in that case.
+
+`route()` validates context, source and batch fingerprints. A changed task,
+source or tool snapshot requires fresh decisions when validation rejects the old
+input. Do not retry with changed IDs or synthesize a Receipt to hide the failure.
+
+### Report actual use and blocked actions
+
+Publish the actual `report` from the final block. Do not reconstruct statuses
+using guessed attributes such as `skill_coverage_status`. The renderer retains
+Skill and Provider coverage, `supporting_selection_status`, the finalized state
+and Host-reported execution as separate evidence. `not_required` means empty
+Execution Needs; `no_present_supporting_provider` means no present Provider;
+`no_matching_supporting_capability` means none was selected from the present
+pool; `selected` means a Provider selection. Missing coverage remains unreported.
+
+The renderer distinguishes structured calls from legacy compatibility using the
+existing TaskAnalysis field, without adding caller-supplied status. Structured
+finalization verifies the batch evidence of selected items, not semantic accuracy
+or complete discovery. It cannot prove that every Host-exposed capability was
+supplied. Keep actual root/source boundaries and the current tool snapshot; do not
+replace discovery with a familiar `wanted` list or prune the Host registry to a
+single tool before judging it. Unjudged candidates remain unresolved.
+
+Keep failed attempts and the successful result in UTF-8 TEMP evidence. Preserve
+`receipt.to_mapping()`, the official rendered report and original task/snapshot
+bindings; do not overwrite an earlier Receipt or record speculative execution.
+Import `DECISION_PAYLOAD_CONTRACT_VERSION` instead of guessing a version. Slash
+validation errors identify that character restriction; a faithful public reason
+can spell out both terms without treating the source as sensitive data.
+
+For every claimed use, name its concrete contribution and evidence. A Skill can
+be read without being applied; a selected tool can remain uncalled. A bounded
+read-only spreadsheet extraction may use the available Python library or standard
+library; that does not prove a spreadsheet Provider was called.
+
+- **Read:** the Host actually loaded the full authoritative Skill instructions.
+- **Applied:** the Host performed identifiable steps from those instructions.
+- **Called:** a script, CLI or Provider tool has an actual invocation record.
+- **Verified:** the relevant result has fresh verification evidence.
+
+For Provider results, pass existing typed `ExecutionAttempt` records using
+`render_recommendations(receipt, execution_attempts=attempts, language="zh-TW")`.
+They must belong to this Receipt, a selected Provider and one of its Execution
+Needs. The renderer labels them as Host-reported outcomes; it does not independently
+verify tool execution. An empty attempt list means **execution not reported**, not
+**never executed**. Preserve every attempt, including failures before a later success.
+
+Keep the authorized stage, targets, time window and required evidence in
+`TaskAnalysis.constraints` and `quality_expectations`. Source, build, artifact,
+visual checks and hardware checks require their own evidence. A planning-only
+constraint controls actual actions; it must not become a name-based Skill filter.
+
+Before declaring a tool unavailable, read its selected Skill's current setup and
+API documentation, initialize the documented entry point, then make the smallest
+authorized probe. For desktop inspection this can be a read-only window inventory;
+for a browser it can be a state query. Honor current platform restrictions and
+planning-only limits. A missing method on one object proves that call failed;
+it does not establish that every tool for that purpose is unavailable. Do not
+switch to prohibited APIs or bypass permissions. Record the exact scope tested.
+
+When a tool is blocked, record the failed action, actual error and unchanged
+preconditions. Do not repeatedly retry the same failure. A global hook that also
+blocks recovery tools requires a user-controlled recovery path; Router must not
+uninstall Plugins or change settings. After recovery, run the smallest new check.
+Changing capabilities after finalization requires a new route under the existing
+authorization, without changing the previous Receipt.
+
+## Instruction compliance and evaluation
+
+Skill instructions guide model behavior; installation alone cannot force the
+Host to call `route()`, run a validator or invoke another tool. Router validation
+protects calls that reach its API, including source, batch and Receipt bindings.
+It cannot enforce unrelated Host actions. Stronger action-time enforcement needs
+Host integration and is outside this library's instruction-only installation.
+
+Keep the entry short and operational detail in references. Diagnose actual traces
+before adding rules. The [Agent Skills creation guidance](https://agentskills.io/skill-creation/best-practices)
+and [OpenAI skill documentation](https://developers.openai.com/codex/skills)
+support focused instructions, explicit inputs/outputs and representative testing.
+[OpenAI's skill evaluation guide](https://developers.openai.com/blog/eval-skills)
+distinguishes outcome, process, style and efficiency; inspect tool order and
+artifacts as well as final text. [ManyIFEval](https://aclanthology.org/2025.findings-emnlp.896/)
+reports degradation as simultaneous instructions increase in its tested models.
+That result does not establish a failure rate or a single cause for this Host.
+
+Before accepting a guidance change, run the executable contract/renderer tests
+and a fresh independent routing-only replay of representative tasks. Check
+explicit and implicit triggers, necessary steps, correct documented API use,
+precise failure reports, unrelated tasks and forbidden actions. Do not supply
+expected Skill IDs to the replay agent. Record source boundaries, model/session,
+actual invocations, errors and per-rule results; keep selection, coverage, applied
+methods and tool outcomes separate. Small replays cannot prove universal model
+compliance or a statistically measured improvement. Unit fixtures test protocol
+and rendering behavior, not semantic selection quality.
 
 ## Historical v0.1 compatibility — not normative
 

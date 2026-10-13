@@ -64,7 +64,11 @@
 # 修改紀錄（2026-09-04，Codex）
 # 修改原因：beta.9 修正 canonical Skill 多 physical source 的 handoff freshness 綁定。
 # 修改後功能：公開 v0.2.0-beta.9 version；selection/discovery semantics 不變。
-__version__ = "1.0.0"
+# 修改紀錄（2026-10-07，Steve Peng）：原版本為 1.0.0；為識別選用回報與 API 指引修正，改為 1.1.0，尚未發布。
+# 修改紀錄（2026-10-08，Steve Peng）：原版本 1.1.0；對齊 Host 指引與輸出修正版 1.1.1。
+# 修改紀錄（2026-10-12，Steve Peng）：原版本 1.1.1；對齊選用批次證據修正版 1.1.2。
+# 修改紀錄（2026-10-13，Steve Peng）：原版本 1.1.2；更新為 fixture 隔離修正版 1.1.3。
+__version__ = "1.1.3"
 
 from .registry import classify_capability, deduplicate_registry
 from .host_exposure import (

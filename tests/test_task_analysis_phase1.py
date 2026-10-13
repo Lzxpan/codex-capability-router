@@ -15,7 +15,7 @@ from codex_capability_router.task_analysis import TaskAnalysis, validate_task_an
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-EXPLAIN_CODE_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "legacy_frontmatter" / "explain-code"
+EXPLAIN_CODE_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "legacy_frontmatter" / "explain-code" / "SKILL.fixture.md"
 
 
 def _analysis_payload() -> dict[str, object]:
@@ -88,10 +88,18 @@ class TaskAnalysisContractTests(unittest.TestCase):
 class LegacyFrontmatterCorrectnessTests(unittest.TestCase):
     """驗證 explain-code 相容 normalization 與六類拒絕案例。"""
 
+    def setUp(self) -> None:
+        # 修改紀錄（2026-10-13，Steve Peng）：原 fixture 為正式入口；改於暫存目錄建立，避免被 Host 選用。
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.fixture_root = Path(temporary.name) / "explain-code"
+        self.fixture_root.mkdir()
+        (self.fixture_root / "SKILL.md").write_bytes(EXPLAIN_CODE_FIXTURE.read_bytes())
+
     def test_real_explain_code_fixture_is_discovered(self) -> None:
         """真實 legacy frontmatter 可 discovery，且 source_frontmatter 不進 record。"""
 
-        result = discover_skill_roots([EXPLAIN_CODE_FIXTURE])
+        result = discover_skill_roots([self.fixture_root])
 
         self.assertEqual(result.diagnostics, ())
         self.assertEqual([record.id for record in result.records], ["explain-code"])
@@ -102,7 +110,7 @@ class LegacyFrontmatterCorrectnessTests(unittest.TestCase):
     def test_explain_code_profile_and_runtime_handoff(self) -> None:
         """trusted-root 合法 Skill 可直接建立 available profile 並 handoff。"""
 
-        trusted_inventory = refresh_skill_inventory([EXPLAIN_CODE_FIXTURE])
+        trusted_inventory = refresh_skill_inventory([self.fixture_root])
         self.assertEqual([record.id for record in trusted_inventory.available_records], ["explain-code"])
         trusted_handoffs = handoff_full_instructions(
             trusted_inventory,
@@ -129,11 +137,11 @@ class LegacyFrontmatterCorrectnessTests(unittest.TestCase):
                 ]
             }
         )
-        inventory = refresh_skill_inventory([EXPLAIN_CODE_FIXTURE], runtime=runtime)
+        inventory = refresh_skill_inventory([self.fixture_root], runtime=runtime)
 
         self.assertEqual([profile.id for profile in inventory.profiles], ["explain-code"])
         self.assertEqual([record.id for record in inventory.available_records], ["explain-code"])
-        self.assertEqual(inventory._skill_paths["explain-code"], EXPLAIN_CODE_FIXTURE / "SKILL.md")
+        self.assertEqual(inventory._skill_paths["explain-code"], self.fixture_root / "SKILL.md")
         handoffs = handoff_full_instructions(inventory, PreliminarySelection(("explain-code",)))
         self.assertEqual([handoff.id for handoff in handoffs], ["explain-code"])
 

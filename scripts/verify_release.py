@@ -1,4 +1,4 @@
-"""Standard-library static checks for the 1.0.0 documentation release."""
+"""Standard-library static checks for the 1.1.3 source candidate and historical assets."""
 
 from __future__ import annotations
 
@@ -23,9 +23,11 @@ RELEASE_FILES = (*README_FILES, *ASSETS, "pyproject.toml", "SKILL.md",
     "codex_capability_router/__init__.py", "CHANGELOG.md",
     "references/discovery-and-provenance.md", "references/routing-policy.md",
     "docs/releases/v1.0.0.md", "docs/validation/v1.0.0-validation.md",
-    "scripts/verify_release.py", "tests/test_foundation.py", "tests/test_v1_release.py")
+    "scripts/verify_release.py", "tests/test_foundation.py", "tests/test_v1_release.py",
+    "references/i18n-policy.md", "tests/test_v11_host_workflow.py", "tests/test_v11_rendering.py", "tests/test_v112_decision_evidence.py",
+    "tests/test_fixture_isolation.py", "tests/fixtures/legacy_frontmatter/explain-code/SKILL.fixture.md")
 CORE_FACTS = (
-    "v1.0.0", "v0.2.0-beta.10", "TaskAnalysis", "digest batches",
+    "v1.1.3", "Unreleased", "v1.0.0", "v0.2.0-beta.10", "TaskAnalysis", "digest batches",
     "Host Skill decisions", "Execution Needs", "Provider decisions", "route()",
     "FINALIZED", "ExecutionAttempt", "COMPLETE", "PARTIAL", "needs_detail",
     "SPARSE", "OPAQUE", "app", "mcp", "builtin_tool", "host_tool",
@@ -47,19 +49,22 @@ def text(relative: str) -> str:
 
 def check_versions() -> None:
     metadata = tomllib.loads(text("pyproject.toml"))
-    assert metadata["project"]["version"] == "1.0.0", "package version"
+    # 2026-10-07 Steve Peng：原檢查固定為 1.0.0；改核對 1.1.0 原始碼，安裝指令仍使用已發布基線。
+    # 2026-10-12 Steve Peng：版本檢查由 1.1.1 對齊修正版 1.1.2，保留歷史安裝基線。
+    assert metadata["project"]["version"] == "1.1.3", "package version"
     assert metadata["project"]["dependencies"] == [], "runtime dependencies changed"
     assignments = ast.parse(text("codex_capability_router/__init__.py")).body
     version = next(ast.literal_eval(node.value) for node in assignments
                    if isinstance(node, ast.Assign)
                    and any(isinstance(t, ast.Name) and t.id == "__version__" for t in node.targets))
-    assert version == "1.0.0", "import version"
-    assert "Contract (1.0.0)" in text("SKILL.md"), "Skill contract version"
+    assert version == "1.1.3", "import version"
+    assert "Contract (1.1.3)" in text("SKILL.md"), "Skill contract version"
     for path in README_FILES:
         header = text(path).split("\n\n", 8)[:8]
         joined = "\n".join(header)
-        assert "v1.0.0" in joined and "Stable" in joined, path
+        assert "v1.1.3" in joined and "Unreleased" in joined, path
         assert "releases/tag/v1.0.0" in text(path), path
+        assert "--branch v1.0.0" in text(path), path
 
 
 def check_readmes() -> None:
@@ -110,7 +115,9 @@ def check_assets() -> None:
 
 def check_public_files() -> int:
     tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode("utf-8").split("\0")
-    paths = sorted(set(filter(None, tracked)) | set(RELEASE_FILES))
+    # 修改紀錄（2026-10-13，Steve Peng）：原清單包含已移除的入口；檢查現存 tracked 與必要交付檔案。
+    paths = sorted({relative for relative in tracked if relative and (ROOT / relative).is_file()}
+                   | set(RELEASE_FILES))
     private_roots = {str(Path.home()), Path.home().as_posix(), str(ROOT), ROOT.as_posix()}
     checked = 0
     for relative in paths:
@@ -131,7 +138,7 @@ def main() -> None:
     check_readmes()
     check_assets()
     count = check_public_files()
-    print(json.dumps({"version": "1.0.0", "version_parity": "PASS", "readme_links": "PASS",
+    print(json.dumps({"version": "1.1.3", "version_parity": "PASS", "readme_links": "PASS",
         "readme_assets": "PASS", "svg_xml": "PASS", "utf8_privacy_static": "PASS",
         "text_files_checked": count, "visual_qa": "SEPARATE_OBSERVATION_REQUIRED"}))
 

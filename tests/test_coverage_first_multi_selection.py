@@ -24,6 +24,7 @@ from codex_capability_router.supporting_context import (
     validate_supporting_decision,
 )
 from codex_capability_router.task_analysis import TaskAnalysis
+from tests.test_supporting_decision_phase4 import _responses
 
 
 # 修改紀錄（2026-09-01，Steve Peng）
@@ -238,6 +239,12 @@ class CoverageFirstMultiSelectionTests(unittest.TestCase):
                     validated_decision_payloads=decision,
                     skill_context=skill_context,
                     supporting_context=context,
+                    skill_batch_decisions=_responses(
+                        skill_context.inventory_sweep, skill_context.context_fingerprint, ("coverage-skill",)
+                    ),
+                    supporting_batch_decisions=_responses(
+                        context.inventory_sweep, skill_context.context_fingerprint, ("base-provider", "image-provider")
+                    ),
                     supporting_provider_declarations=providers,
                     supporting_selection={"request_detail": None, "final_selection": final.to_mapping()},
                     supporting_preliminary_provider_ids=("base-provider",),

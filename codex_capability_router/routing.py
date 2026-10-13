@@ -1116,6 +1116,8 @@ def route(request: SelectionRouteInput) -> SelectionReceipt:
             for item in selected_supporting
         )
         supporting_metrics["selected_count"] = len(selected_supporting)
+        # 修改紀錄（2026-10-07，Steve Peng）：原先保留準備階段的零值；為使定案計數一致，改用最終清單。
+        supporting_metrics["provider_selected_total"] = len(selected_supporting)
         supporting_metrics["plausible_count"] = len(selected_supporting)
         supporting_metrics["provider_plausible_total"] = len(selected_supporting)
     skill_metrics = None
@@ -1264,7 +1266,10 @@ def _require_receipt_text(value: object, field: str) -> None:
     if not isinstance(value, str) or not value.strip() or len(value) > 2048:
         raise ValueError(f"receipt {field} must be bounded text")
     folded = value.casefold()
-    if "/" in value or "\\" in value or any(marker in folded for marker in ("api_key=", "password=", "secret=", "token=")):
+    # 修改紀錄（2026-10-12，Steve Peng）：原本斜線與敏感資料共用錯誤；改為指出斜線原因，保留原防護。
+    if "/" in value or "\\" in value:
+        raise ValueError(f"receipt {field} contains slash characters; use bounded public text without paths")
+    if any(marker in folded for marker in ("api_key=", "password=", "secret=", "token=")):
         raise ValueError(f"receipt {field} contains private or sensitive content")
 
 

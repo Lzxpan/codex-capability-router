@@ -184,7 +184,11 @@ def validate_sweep_decisions(
     task_fingerprint: str,
     selected_ids: Sequence[str] = (),
 ) -> InventorySweep:
-    """Validate Host dispositions; missing batches remain partial, never inferred."""
+    """驗證同一任務與 sweep 的 Host 決策，回傳實際收到的 InventorySweep 證據。
+
+    每個 selected_ids 必須收到 selected disposition；缺少、衝突或過期資料拋出 ValueError。
+    未選候選可缺批次或為 needs_detail，仍保留 PARTIAL；不推論 Host 語意判斷是否正確。
+    """
 
     if not isinstance(task_fingerprint, str) or re.fullmatch(r"[0-9a-f]{64}", task_fingerprint) is None:
         raise ValueError("decisions require a task context fingerprint")
@@ -213,6 +217,11 @@ def validate_sweep_decisions(
                 raise ValueError("candidate disposition conflicts with final selection")
         seen.add(index)
         decisions.update(dispositions)
+    # 修改紀錄（2026-10-12，Steve Peng）：原本只驗證收到的批次，缺少 selected 所在批次仍可定案。
+    # 改為要求每個最終選用項都有一致的批次證據；未選候選的缺批次／needs_detail 仍保留 PARTIAL。
+    missing_selected = sorted(selected - decisions.keys())
+    if missing_selected:
+        raise ValueError("selected candidates require batch evidence: " + ", ".join(missing_selected))
     return replace(
         sweep,
         decision_received_ids=tuple(i for i in sweep.staged_ids if i in decisions),

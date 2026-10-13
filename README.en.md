@@ -6,11 +6,11 @@
 
 ![An otter Router guides a rabbit developer through many methods and tools while an owl checks the results.](docs/assets/v1.0.0/hero.png)
 
-[![Version: 1.0.0](https://img.shields.io/badge/version-1.0.0-168C84)](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.0.0)
+[![Version: 1.1.3](https://img.shields.io/badge/version-1.1.3-168C84)](CHANGELOG.md)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-E6B13E)](LICENSE)
 
-**Current version: `v1.0.0`, Stable.** Runtime behavior is unchanged from `v0.2.0-beta.10`; this release refreshes the project homepage, illustrated guides, and release validation.
+**Current source version: `v1.1.3`, Unreleased.** Based on Stable `v1.0.0` (`v0.2.0-beta.10`), this revision isolates test fixtures from production discovery, preserves batch evidence for selected items, and distinguishes structured routing from legacy compatibility. It does not add Skill Preference Memory.
 
 You already have plenty of Skills and tools. But debugging firmware, explaining a project, creating images, and checking a release often need several capabilities working together.
 
@@ -22,7 +22,7 @@ You need **Git, Python 3.11+**, and a Codex/Host that can read Skills. There are
 
 ### Install
 
-These commands are for a fresh installation. Git refuses to overwrite an existing target; inspect that installation before updating it.
+`v1.1.3` has not been published. The commands below install the published [Stable `v1.0.0`](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.0.0). These commands are for a fresh installation. Git refuses to overwrite an existing target; inspect that installation before updating it.
 
 **Windows PowerShell**
 
@@ -52,6 +52,16 @@ and verify that the documentation matches the code.
 `FINALIZED` means the selection record is frozen. Look separately at Host execution evidence to learn whether the work succeeded.
 
 Installation supplies instruction-level integration. Automatic triggering, complete inventory, and actual Skill application depend on Host wiring; **automatic Host integration is not established in every environment**. Integrator APIs and examples are in the [current contract](references/routing-policy.md).
+
+## Cumulative changes in v1.1.3 since v1.0.0
+
+- Structured routing rejects finalization when any selected Skill or Provider lacks its matching `selected` batch decision, identifying the missing IDs. Unselected candidates can remain missing or `needs_detail`, with `PARTIAL` coverage.
+- Calls without TaskAnalysis remain compatible, but the output labels their Host selection workflow as unverified. Structured batch validation does not prove complete discovery, semantic accuracy, or downstream execution success.
+- The [Host API example](references/routing-policy.md#host-api-workflow) reuses the same discovery snapshots, reads full methods before identifying tool needs, and creates a formal Receipt. When no routing tool is exposed, check the installed library's Python API; report the actual error and stopping point if it fails.
+- Final `provider_selected_total` matches the selected Provider list and `selected_count`.
+- `render_recommendations(receipt, execution_attempts=attempts, language="en")` displays selected Providers, decision coverage, and Host reports separately. Every `ExecutionAttempt` binds the Receipt, Provider, and original need. Failures and retries remain in reported order.
+- Empty execution reports mean "No execution results reported by Host"; absent coverage metrics mean "not provided". Neither implies success.
+- Provider selection status comes directly from the Receipt; `not_required` is separate from no matching Provider and from coverage. See the [current contract](references/routing-policy.md#instruction-compliance-and-evaluation) for instruction limits and trace-based evaluation.
 
 ## Follow one task from confusion to evidence
 
@@ -150,6 +160,6 @@ python scripts/verify_release.py
 
 Use `python3` instead of `python` where that is your macOS/Linux interpreter command.
 
-The current behavior baseline is beta.10. Historical `0.1.0` compatibility and beta records remain available; legacy fields do not replace the current selection contract.
+The current selection baseline is `v1.0.0` / beta.10, with the `v1.1.3` fixes above. Historical `0.1.0` compatibility and beta records remain available; legacy fields do not replace the current selection contract.
 
-[CHANGELOG](CHANGELOG.md) · [Stable validation guide](docs/validation/v1.0.0-validation.md) · [Release notes](docs/releases/v1.0.0.md) · [Discovery](references/discovery-and-provenance.md) · [Routing contract](references/routing-policy.md) · [MIT License](LICENSE)
+[CHANGELOG](CHANGELOG.md) · [Historical 1.0.0 validation guide](docs/validation/v1.0.0-validation.md) · [1.0.0 release notes](docs/releases/v1.0.0.md) · [Discovery](references/discovery-and-provenance.md) · [Routing contract](references/routing-policy.md) · [MIT License](LICENSE)

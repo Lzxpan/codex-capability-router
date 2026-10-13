@@ -16,10 +16,8 @@ from codex_capability_router.inventory import refresh_skill_inventory
 from codex_capability_router.provider_adapters import adapt_codex_mcp_cli_inventory, discover_active_plugin_children
 
 
-def _responses(sweep, task, selected=()):
-    return tuple({"task_fingerprint": task, "sweep_fingerprint": sweep.fingerprint,
-                  "batch_index": index, "dispositions": {identity: "selected" if identity in selected else "not_selected" for identity in batch}}
-                 for index, batch in enumerate(sweep.batches))
+# 2026-10-12 Steve Peng：共用受控 fixture helper，production 不得由最終清單反填批次。
+_responses = phase4._responses
 
 
 class DecisionCoverageTests(unittest.TestCase):
@@ -109,12 +107,19 @@ class DecisionCoverageTests(unittest.TestCase):
         )
         request = fixture._route_request(fixture._decision(needs=(fixture.need,), final=final),
                                          provider_declarations=(fixture.provider,), readiness_evidence=(fixture.evidence,))
+        missing = replace(request, skill_batch_decisions=(), supporting_batch_decisions=())
+        with self.assertRaisesRegex(ValueError, "selected candidates require batch evidence"):
+            route(missing)
         receipt = route(request)
         self.assertEqual(receipt["selection_state"], "FINALIZED")
+        # 2026-10-07 Steve Peng：定案選用數必須與實際清單一致，不能沿用準備階段的零值。
+        selected_count = len(receipt["selected_supporting_capabilities"])
+        self.assertEqual(receipt["supporting_metrics"]["selected_count"], selected_count)
+        self.assertEqual(receipt["supporting_metrics"]["provider_selected_total"], selected_count)
         for kind in ("skill", "provider"):
             metrics = receipt["skill_metrics" if kind == "skill" else "supporting_metrics"]
-            self.assertEqual(metrics[f"{kind}_semantically_considered_total"], 0)
-            self.assertEqual(metrics[f"{kind}_semantic_coverage_status"], "PARTIAL")
+            self.assertEqual(metrics[f"{kind}_semantically_considered_total"], 1)
+            self.assertEqual(metrics[f"{kind}_semantic_coverage_status"], "COMPLETE")
         task = request.skill_context.context_fingerprint
         completed = replace(request,
             skill_batch_decisions=_responses(request.skill_context.inventory_sweep, task, ("phase4-skill",)),

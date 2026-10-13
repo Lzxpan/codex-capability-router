@@ -34,6 +34,7 @@ from codex_capability_router.route_context import (
 )
 from codex_capability_router.routing import SelectionRouteInput, route
 from codex_capability_router.task_analysis import TaskAnalysis
+from tests.test_supporting_decision_phase4 import _responses
 
 
 def _write_skill(root: Path, skill_id: str, *, status: str = "unknown") -> Path:
@@ -162,6 +163,9 @@ class HostExposureRouteTests(unittest.TestCase):
                 final_selection=selection.to_mapping(),
                 validated_decision_payloads=decision,
                 skill_context=context,
+                skill_batch_decisions=_responses(
+                    context.inventory_sweep, context.context_fingerprint, ("host-visible",)
+                ),
                 host_exposure=prepared,
                 finalize_host_exposure=stale,
             )
@@ -290,6 +294,9 @@ class HostExposureRouteTests(unittest.TestCase):
                         final_selection=selection.to_mapping(),
                         validated_decision_payloads=decision,
                         skill_context=context,
+                        skill_batch_decisions=_responses(
+                            context.inventory_sweep, context.context_fingerprint, ("host-visible",)
+                        ),
                         host_exposure=prepared,
                         finalize_host_exposure=fresh,
                     )
@@ -339,6 +346,9 @@ class CoverageContractTests(unittest.TestCase):
                     final_selection=selection.to_mapping(),
                     validated_decision_payloads=decision,
                     skill_context=context,
+                    skill_batch_decisions=_responses(
+                        context.inventory_sweep, context.context_fingerprint, ("coverage-skill",)
+                    ),
                 )
             )
             self.assertEqual(receipt["selected_skills"][0]["supports"], [{"section": "work_items", "index": 0}])
@@ -425,6 +435,9 @@ class CoverageContractTests(unittest.TestCase):
                     final_selection=selection.to_mapping(),
                     validated_decision_payloads=decision,
                     skill_context=context,
+                    skill_batch_decisions=_responses(
+                        context.inventory_sweep, context.context_fingerprint, ("base-skill", "coverage-addition")
+                    ),
                     coverage_check_used=True,
                     coverage_additions=(
                         {
@@ -479,6 +492,9 @@ class CoverageContractTests(unittest.TestCase):
                     final_selection=selection.to_mapping(),
                     validated_decision_payloads=decision,
                     skill_context=context,
+                    skill_batch_decisions=_responses(
+                        context.inventory_sweep, context.context_fingerprint, ("available-skill",)
+                    ),
                     runtime=runtime,
                     possible_relevance_reasons={"unknown-skill": "可能協助來源檢查"},
                 )

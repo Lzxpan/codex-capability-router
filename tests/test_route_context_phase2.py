@@ -18,7 +18,7 @@ from codex_capability_router.task_analysis import TaskAnalysis, validate_task_an
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-EXPLAIN_CODE_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "legacy_frontmatter" / "explain-code"
+EXPLAIN_CODE_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "legacy_frontmatter" / "explain-code" / "SKILL.fixture.md"
 
 
 def _analysis(summary: str = "分析 source 並整理技術說明。") -> TaskAnalysis:
@@ -254,17 +254,20 @@ class Phase2RouteContextTests(unittest.TestCase):
     def test_explain_code_phase1_contract_is_available_from_trusted_root(self) -> None:
         """合法 explain-code trusted-root Skill 不依賴 runtime availability fact。"""
 
-        trusted_context = prepare_route_context(_analysis(), skill_roots=(EXPLAIN_CODE_FIXTURE,))
-        self.assertEqual([profile.id for profile in trusted_context.candidates], ["explain-code"])
-        runtime = import_runtime_envelope(
-            {"capabilities": [_runtime_record("explain-code", "available")]}
-        )
-        available_context = prepare_route_context(
-            _analysis(),
-            skill_roots=(EXPLAIN_CODE_FIXTURE,),
-            runtime=runtime,
-        )
-        self.assertEqual([profile.id for profile in available_context.candidates], ["explain-code"])
+        # 修改紀錄（2026-10-13，Steve Peng）：原測試直接探索交付 fixture；改在暫存目錄保持同一相容測試。
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture_root = Path(temporary) / "explain-code"
+            fixture_root.mkdir()
+            (fixture_root / "SKILL.md").write_bytes(EXPLAIN_CODE_FIXTURE.read_bytes())
+            trusted_context = prepare_route_context(_analysis(), skill_roots=(fixture_root,))
+            self.assertEqual([profile.id for profile in trusted_context.candidates], ["explain-code"])
+            runtime = import_runtime_envelope(
+                {"capabilities": [_runtime_record("explain-code", "available")]}
+            )
+            available_context = prepare_route_context(
+                _analysis(), skill_roots=(fixture_root,), runtime=runtime,
+            )
+            self.assertEqual([profile.id for profile in available_context.candidates], ["explain-code"])
 
 
 if __name__ == "__main__":

@@ -6,11 +6,11 @@
 
 ![水獺 Router 引導兔子開發者，從眾多方法與工具中組合工作計畫，貓頭鷹負責檢查結果。](docs/assets/v1.0.0/hero.png)
 
-[![Version: 1.0.0](https://img.shields.io/badge/version-1.0.0-168C84)](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.0.0)
+[![Version: 1.1.3](https://img.shields.io/badge/version-1.1.3-168C84)](CHANGELOG.md)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-E6B13E)](LICENSE)
 
-**目前版本：`v1.0.0`，Stable。** Runtime 功能沿用 `v0.2.0-beta.10`；這次整理正式版首頁、圖解與發布驗證。
+**目前原始碼版本：`v1.1.3`，Unreleased。** 以 Stable `v1.0.0`（`v0.2.0-beta.10`）為基線，隔離測試 fixture 與正式技能探索、保留所選項的批次證據，並區分結構化路由與相容呼叫；不加入 Skill Preference Memory。
 
 你已經有很多 Skills 和工具，但每個任務都不一樣。修 firmware、整理 README、產生圖片、檢查測試，往往需要幾種能力一起合作。
 
@@ -22,7 +22,7 @@
 
 ### 安裝
 
-以下是全新安裝；目標資料夾已存在時，Git 會拒絕覆蓋，請先確認既有安裝。
+`v1.1.3` 尚未發布；下列指令安裝已發布的 [Stable `v1.0.0`](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.0.0)。以下是全新安裝；目標資料夾已存在時，Git 會拒絕覆蓋，請先確認既有安裝。
 
 **Windows PowerShell**
 
@@ -51,6 +51,16 @@ $codex-capability-router
 `FINALIZED` 代表選擇紀錄已定案；工作是否成功，要另外看 Host 的執行證據。
 
 安裝提供的是指令層整合。每個任務是否自動觸發 Router、能否取得完整 inventory、會不會實際套用 Skill，取決於 Host 接線；**不宣稱 automatic Host integration 已在所有環境成立**。整合端 API 與範例見[目前 contract](references/routing-policy.md)。
+
+## v1.1.3 累積修改（相對 v1.0.0）
+
+- 結構化路由缺少任何最終選用 Skill／Provider 的 `selected` 批次證據時，`route()` 拒絕定案並回報缺少的 IDs。未選候選仍可缺少決策或維持 `needs_detail`，Coverage 保留 `PARTIAL`。
+- 無 TaskAnalysis 的相容呼叫維持可用，但輸出明確表示 Host 選用流程未驗證。結構化路由的批次驗證不代表候選發現完整、語意選用正確或下游執行成功。
+- [Host API 範例](references/routing-policy.md#host-api-workflow) 沿用同一份 discovery snapshots，先讀完整方法，再建立工具需求與正式 Receipt。沒有路由工具時，先確認已安裝 library 的 Python API；失敗則回報實際錯誤與停止位置。
+- 定案後的 `provider_selected_total` 與最終 Provider 清單、`selected_count` 一致。
+- `render_recommendations(receipt, execution_attempts=attempts, language="zh-TW")` 分別顯示已選 Provider、判斷覆蓋與 Host 回報。每筆 `ExecutionAttempt` 都核對 Receipt、Provider 與原始需求；失敗與重試依回報順序保留。
+- 沒有執行回報時顯示「Host 未回報執行結果」；缺少 coverage metrics 時顯示「未提供」。兩者都不能推定成功。
+- Provider 選用狀態直接讀取 Receipt；`not_required` 與沒有符合的 Provider 分開，不由覆蓋資料推算。技能指引的遵從限制與實際軌跡評估見[目前 contract](references/routing-policy.md#instruction-compliance-and-evaluation)。
 
 ## 一個任務，怎麼找到幫手？
 
@@ -149,6 +159,6 @@ python scripts/verify_release.py
 
 macOS／Linux 若使用 `python3`，將上面的 `python` 改為 `python3`。
 
-目前 contract 的功能基線為 beta.10；`0.1.0` 相容性與歷史 beta 資料仍保留，歷史欄位不能取代目前 selection contract。
+目前 contract 以 `v1.0.0`／beta.10 為選用基線，加入上述 `v1.1.3` 修正；`0.1.0` 相容性與歷史 beta 資料仍保留，歷史欄位不能取代目前 selection contract。
 
-[CHANGELOG](CHANGELOG.md) · [正式版驗證說明](docs/validation/v1.0.0-validation.md) · [發布說明](docs/releases/v1.0.0.md) · [Discovery](references/discovery-and-provenance.md) · [Routing contract](references/routing-policy.md) · [MIT License](LICENSE)
+[CHANGELOG](CHANGELOG.md) · [1.0.0 歷史驗證說明](docs/validation/v1.0.0-validation.md) · [1.0.0 發布說明](docs/releases/v1.0.0.md) · [Discovery](references/discovery-and-provenance.md) · [Routing contract](references/routing-policy.md) · [MIT License](LICENSE)
