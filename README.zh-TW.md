@@ -10,7 +10,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-E6B13E)](LICENSE)
 
-**目前原始碼版本：`v1.1.3`，Unreleased。** 以 Stable `v1.0.0`（`v0.2.0-beta.10`）為基線，隔離測試 fixture 與正式技能探索、保留所選項的批次證據，並區分結構化路由與相容呼叫；不加入 Skill Preference Memory。
+**目前穩定版本：`v1.1.3`，發布日期：2026-10-13。** 以 Stable `v1.0.0`（`v0.2.0-beta.10`）為基線，隔離測試 fixture 與正式技能探索、保留所選項的批次證據，並區分結構化路由與相容呼叫；不加入 Skill Preference Memory。
 
 你已經有很多 Skills 和工具，但每個任務都不一樣。修 firmware、整理 README、產生圖片、檢查測試，往往需要幾種能力一起合作。
 
@@ -22,13 +22,13 @@
 
 ### 安裝
 
-`v1.1.3` 尚未發布；下列指令安裝已發布的 [Stable `v1.0.0`](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.0.0)。以下是全新安裝；目標資料夾已存在時，Git 會拒絕覆蓋，請先確認既有安裝。
+下列指令安裝 [Stable `v1.1.3`](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.1.3)。以下是全新安裝；目標資料夾已存在時，Git 會拒絕覆蓋，請先確認既有安裝。
 
 **Windows PowerShell**
 
 ```powershell
 $skillRoot = Join-Path $HOME ".agents/skills/codex-capability-router"
-git clone --branch v1.0.0 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
+git clone --branch v1.1.3 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
 if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 ```
 
@@ -36,7 +36,7 @@ if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 
 ```bash
 skill_root="${HOME}/.agents/skills/codex-capability-router"
-git clone --branch v1.0.0 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
+git clone --branch v1.1.3 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
 ```
 
 讓 Host 重新載入 Skill 清單，再在 prompt 中使用：
@@ -54,6 +54,7 @@ $codex-capability-router
 
 ## v1.1.3 累積修改（相對 v1.0.0）
 
+- 測試用 legacy frontmatter 改用 `SKILL.fixture.md`，只在相容測試的暫存目錄建立 `SKILL.md`，避免測試資料被當成正式技能。正式來源與完整 handoff 有回歸檢查。
 - 結構化路由缺少任何最終選用 Skill／Provider 的 `selected` 批次證據時，`route()` 拒絕定案並回報缺少的 IDs。未選候選仍可缺少決策或維持 `needs_detail`，Coverage 保留 `PARTIAL`。
 - 無 TaskAnalysis 的相容呼叫維持可用，但輸出明確表示 Host 選用流程未驗證。結構化路由的批次驗證不代表候選發現完整、語意選用正確或下游執行成功。
 - [Host API 範例](references/routing-policy.md#host-api-workflow) 沿用同一份 discovery snapshots，先讀完整方法，再建立工具需求與正式 Receipt。沒有路由工具時，先確認已安裝 library 的 Python API；失敗則回報實際錯誤與停止位置。
@@ -147,7 +148,7 @@ $codex-capability-router
 - **只走可信來源。** 明確 roots、受控的 `.system` child、已解析的 active Plugin paths 與可信 Host snapshot；不是無界遞迴掃描。
 - **一次 targeted Skill freshness recovery。** Handoff 檢查實際選定來源的內容。最多一次 refresh；公開 metadata／identity 改變時要求 `SELECTION_REVALIDATION_REQUIRED`，再度 mismatch 則回傳 `HANDOFF_REJECTION_AFTER_ONE_REFRESH`。
 - **caller/session-owned cache。** `RootPlanSnapshot` 與 `SkillInventorySnapshot` 的生命週期由呼叫端管理；Router 不提供 persistent preference learning，也不會背景學習使用偏好。
-- **Host integration 有範圍。** Presence 不保證 readiness。完整 inventory、模型判斷品質、各 Provider 執行與硬體結果，需要各自的實測證據。
+- **Host 的遵從與執行有範圍。** Skill 指引不能保證每次都被遵守。批次檢查驗證提交資料的結構與綁定，不證明模型逐項閱讀或判斷。Presence 不保證 readiness；完整 inventory、模型判斷品質、各 Provider 執行與硬體結果，需要各自的實測證據。
 
 ## 維護與驗證
 

@@ -27,7 +27,7 @@ RELEASE_FILES = (*README_FILES, *ASSETS, "pyproject.toml", "SKILL.md",
     "references/i18n-policy.md", "tests/test_v11_host_workflow.py", "tests/test_v11_rendering.py", "tests/test_v112_decision_evidence.py",
     "tests/test_fixture_isolation.py", "tests/fixtures/legacy_frontmatter/explain-code/SKILL.fixture.md")
 CORE_FACTS = (
-    "v1.1.3", "Unreleased", "v1.0.0", "v0.2.0-beta.10", "TaskAnalysis", "digest batches",
+    "v1.1.3", "2026-10-13", "v1.0.0", "v0.2.0-beta.10", "TaskAnalysis", "digest batches",
     "Host Skill decisions", "Execution Needs", "Provider decisions", "route()",
     "FINALIZED", "ExecutionAttempt", "COMPLETE", "PARTIAL", "needs_detail",
     "SPARSE", "OPAQUE", "app", "mcp", "builtin_tool", "host_tool",
@@ -59,12 +59,14 @@ def check_versions() -> None:
                    and any(isinstance(t, ast.Name) and t.id == "__version__" for t in node.targets))
     assert version == "1.1.3", "import version"
     assert "Contract (1.1.3)" in text("SKILL.md"), "Skill contract version"
+    # 修改紀錄（2026-10-13，Steve Peng）：原檢查要求 Unreleased 與 v1.0.0 安裝指令。
+    # 為發布既有 v1.1.3，改核對發布日期與該版本連結／安裝指令；不修改 runtime 或入口內容。
     for path in README_FILES:
         header = text(path).split("\n\n", 8)[:8]
         joined = "\n".join(header)
-        assert "v1.1.3" in joined and "Unreleased" in joined, path
-        assert "releases/tag/v1.0.0" in text(path), path
-        assert "--branch v1.0.0" in text(path), path
+        assert "v1.1.3" in joined and "2026-10-13" in joined, path
+        assert "releases/tag/v1.1.3" in text(path), path
+        assert "--branch v1.1.3" in text(path), path
 
 
 def check_readmes() -> None:

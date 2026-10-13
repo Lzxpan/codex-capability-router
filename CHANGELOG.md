@@ -2,20 +2,23 @@
 
 All notable changes to `codex-capability-router` are documented here.
 
-## v1.1.3 - Unreleased
+## v1.1.3 - 2026-10-13
 
+- GitHub 正式發布，包含 v1.1.0–v1.1.2 本機修正版的累積修改。
 - 將 legacy frontmatter fixture 改為 `SKILL.fixture.md`，避免本機技能探索將測試資料當成正式技能。
 - 相容測試只在暫存目錄建立 `SKILL.md`；新增交付入口、正式來源與完整 handoff 的回歸驗證。
 - 保留 v1.1.2 的最終選用批次證據檢查及既有路由 API。
 
-## v1.1.2 - Unreleased
+已知限制：Skill 指引不能保證 Host 完全遵從；批次資料驗證不證明模型已獨立判斷所有候選。缺少判斷的候選維持 `PARTIAL`，`FINALIZED` 僅代表選用資料定案。
+
+## v1.1.2 - 2026-10-12（本機修正版，未獨立發布）
 
 - 結構化路由要求每個最終選用 Skill／Provider 具有同上下文的 selected 批次證據；缺少證據時拒絕定案並列出缺少的 IDs。
 - 未選候選仍可保留缺少決策或 needs_detail，不強迫全部 Coverage COMPLETE；無 TaskAnalysis 的相容呼叫維持可用並明確標示證據限制。
 - 保留公開文字驗證，斜線錯誤改為指出具體限制；操作指引使用 UTF-8 隔離載入並保留實際路由輸入、輸出與失敗紀錄。
 - 新增缺批次、部分覆蓋、相容輸出與錯誤訊息回歸檢查，移轉既有 typed fixtures；不新增相依套件、選用演算法、Hook 或記憶功能。
 
-## v1.1.1 - Unreleased
+## v1.1.1 - 2026-10-08（本機修正版，未獨立發布）
 
 - 調整技能入口，區分只套用指引與實際正式路由；使用既有 renderer 回報 Receipt。
 - 補齊 Host 輸入欄位、路徑型別、完整 handoff 欄位及公開工具描述界線；保留稀疏候選。
@@ -23,7 +26,7 @@ All notable changes to `codex-capability-router` are documented here.
 - 工具不可用結論須依目前文件初始化與最小授權探測，保留實際失敗範圍。
 - 說明技能指引與 API 檢查的遵從邊界，增加操作範例與輸出回歸檢查；不新增相依套件、選用演算法、記憶或全域 Hook。
 
-## v1.1.0 - Unreleased
+## v1.1.0 - 2026-10-07（本機修正版，未獨立發布）
 
 - 以 `v1.0.0` 為基線，保留寬鬆選用、重疊方法並存與完整候選判斷規則；不加入 Skill Preference Memory。
 - 補齊 Host API 範例，從可信 discovery、完整 Skill handoff 到正式 `route()`；沿用同一份 typed snapshots，明確回報實際失敗位置。
@@ -32,7 +35,12 @@ All notable changes to `codex-capability-router` are documented here.
 - 驗證執行回報與 Receipt fingerprint、Provider kind／id、原始需求的綁定，保留失敗與後續重試。
 - 增加 API 範例與輸出回歸測試；不新增相依套件、路由入口、Hook 或自動安裝。
 
-原有 `v1.0.0` 圖解與驗證文件保留為歷史資料。`v1.1.0` 未建立公開 tag 或發布。
+原有 `v1.0.0` 圖解與驗證文件保留為歷史資料。`v1.1.0`–`v1.1.2` 未建立獨立公開 tag；累積修改隨 `v1.1.3` 發布。
+
+## v1.0.1 - 2026-09-11（已停用）
+
+- 曾加入 Skill Preference Memory；實際使用出現適用技能未選用的問題，後續停用並將 `main` 回復至 `v1.0.0`。
+- 保留歷史 tag；`v1.1.3` 不包含這項偏好記憶功能。
 
 ## v1.0.0 - 2026-09-08
 

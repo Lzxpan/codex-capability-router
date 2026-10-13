@@ -10,7 +10,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-E6B13E)](LICENSE)
 
-**Current source version: `v1.1.3`, Unreleased.** Based on Stable `v1.0.0` (`v0.2.0-beta.10`), this revision isolates test fixtures from production discovery, preserves batch evidence for selected items, and distinguishes structured routing from legacy compatibility. It does not add Skill Preference Memory.
+**Current stable version: `v1.1.3`, released 2026-10-13.** Based on Stable `v1.0.0` (`v0.2.0-beta.10`), this revision isolates test fixtures from production discovery, preserves batch evidence for selected items, and distinguishes structured routing from legacy compatibility. It does not add Skill Preference Memory.
 
 You already have plenty of Skills and tools. But debugging firmware, explaining a project, creating images, and checking a release often need several capabilities working together.
 
@@ -22,13 +22,13 @@ You need **Git, Python 3.11+**, and a Codex/Host that can read Skills. There are
 
 ### Install
 
-`v1.1.3` has not been published. The commands below install the published [Stable `v1.0.0`](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.0.0). These commands are for a fresh installation. Git refuses to overwrite an existing target; inspect that installation before updating it.
+The commands below install [Stable `v1.1.3`](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.1.3). These commands are for a fresh installation. Git refuses to overwrite an existing target; inspect that installation before updating it.
 
 **Windows PowerShell**
 
 ```powershell
 $skillRoot = Join-Path $HOME ".agents/skills/codex-capability-router"
-git clone --branch v1.0.0 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
+git clone --branch v1.1.3 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
 if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 ```
 
@@ -36,7 +36,7 @@ if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 
 ```bash
 skill_root="${HOME}/.agents/skills/codex-capability-router"
-git clone --branch v1.0.0 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
+git clone --branch v1.1.3 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
 ```
 
 Reload the Host's Skill list, then use it in a prompt:
@@ -55,6 +55,7 @@ Installation supplies instruction-level integration. Automatic triggering, compl
 
 ## Cumulative changes in v1.1.3 since v1.0.0
 
+- Legacy frontmatter test data uses `SKILL.fixture.md`. Compatibility tests create `SKILL.md` only in temporary directories so fixture data cannot enter production Skill discovery. Regression checks cover the formal source and full handoff.
 - Structured routing rejects finalization when any selected Skill or Provider lacks its matching `selected` batch decision, identifying the missing IDs. Unselected candidates can remain missing or `needs_detail`, with `PARTIAL` coverage.
 - Calls without TaskAnalysis remain compatible, but the output labels their Host selection workflow as unverified. Structured batch validation does not prove complete discovery, semantic accuracy, or downstream execution success.
 - The [Host API example](references/routing-policy.md#host-api-workflow) reuses the same discovery snapshots, reads full methods before identifying tool needs, and creates a formal Receipt. When no routing tool is exposed, check the installed library's Python API; report the actual error and stopping point if it fails.
@@ -148,7 +149,7 @@ A batch with no response remains `PARTIAL`; do not substitute staged count for c
 - **Trusted sources only.** Explicit roots, the bounded `.system` child, resolved active Plugin paths, and trusted Host snapshots. No unbounded recursive scanning.
 - **One targeted Skill freshness recovery.** Handoff checks the selected authoritative source. At most one refresh; changed public metadata or identity requires `SELECTION_REVALIDATION_REQUIRED`. A further mismatch returns `HANDOFF_REJECTION_AFTER_ONE_REFRESH`.
 - **caller/session-owned cache.** The caller owns `RootPlanSnapshot` and `SkillInventorySnapshot` lifetimes. The Router provides no persistent preference learning or background learning of user preferences.
-- **Host integration has limits.** Presence does not guarantee readiness. Complete inventory, semantic accuracy, real Provider execution, and hardware outcomes require their own evidence.
+- **Host compliance and execution have limits.** Skill instructions cannot guarantee compliance on every run. Batch checks validate the structure and bindings of submitted data; they do not prove that the model read or judged each candidate. Presence does not guarantee readiness. Complete inventory, semantic accuracy, real Provider execution, and hardware outcomes require their own evidence.
 
 ## Maintenance and verification
 
