@@ -58,6 +58,10 @@ $codex-capability-router
 - 辨識 portable 與 Claude 外掛的標準 `skills/` 目錄及 Claude 的額外宣告路徑，保留套件內路徑限制。
 - Portable 外掛尚未進行完整 metadata schema 驗證；根目錄的 `mcp.json` 不會自動加入 Provider 候選。
 
+### v1.1.4 發布後的指引更新
+
+外掛清單查詢較慢時，可依[查詢指引](references/discovery-and-provenance.md#cli-compatibility)設定 `timeout_seconds=90`。指引保留停用的已安裝外掛，並將錯誤資料列標示為部分診斷。此更新位於 `main`；既有 `v1.1.4` 標籤及原始碼封存檔仍保留原發布內容。
+
 ## v1.1.3 累積修改（相對 v1.0.0）
 
 - 測試用 legacy frontmatter 改用 `SKILL.fixture.md`，只在相容測試的暫存目錄建立 `SKILL.md`，避免測試資料被當成正式技能。正式來源與完整 handoff 有回歸檢查。

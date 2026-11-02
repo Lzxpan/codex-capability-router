@@ -59,6 +59,10 @@ Installation supplies instruction-level integration. Automatic triggering, compl
 - Discover standard `skills/` directories in portable and Claude Plugins, plus Claude's additional declared paths, while keeping paths inside the package.
 - Portable Plugin metadata is not fully schema-validated; root `mcp.json` is not automatically added to Provider candidates.
 
+### Post-release guidance for v1.1.4
+
+For slow Plugin list queries, set `timeout_seconds=90` as shown in the [discovery guide](references/discovery-and-provenance.md#cli-compatibility). The guide keeps installed Plugins even when disabled and reports invalid rows as partial evidence. This update is on `main`; the existing `v1.1.4` tag and source archives retain the original release.
+
 ## Cumulative changes in v1.1.3 since v1.0.0
 
 - Legacy frontmatter test data uses `SKILL.fixture.md`. Compatibility tests create `SKILL.md` only in temporary directories so fixture data cannot enter production Skill discovery. Regression checks cover the formal source and full handoff.

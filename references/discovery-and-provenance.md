@@ -75,6 +75,51 @@ inventory. Probes use fixed arguments, `shell=False`, bounded time and parsing;
 no arbitrary shell, marketplace lookup, credentials, or auth probing is allowed
 inside Router discovery.
 
+The default `probe_cli()` timeout is two seconds. A live Plugin list can take
+longer, so pass `timeout_seconds=90` when checking the current installation.
+First complete the [installed runtime bootstrap](routing-policy.md#load-the-selected-installed-runtime)
+in the same Python process, then run:
+
+<!-- host-workflow:plugin-probe -->
+```python
+import json
+import subprocess
+from codex_capability_router.discovery import probe_cli
+
+captured = []
+
+def capture_cli(command, **kwargs):
+    result = subprocess.run(command, **kwargs)
+    captured.append(result)
+    return result
+
+plugin_probe = probe_cli(
+    ("codex", "plugin", "list", "--json"), runner=capture_cli, timeout_seconds=90,
+)
+plugin_payload = None
+plugin_rows = None
+invalid_row_count = 0
+if captured and captured[0].returncode == 0:
+    try:
+        parsed = json.loads(captured[0].stdout)
+    except (TypeError, ValueError):
+        parsed = None
+    if isinstance(parsed, dict) and isinstance(parsed.get("installed"), list):
+        plugin_payload = parsed
+        plugin_rows = [row for row in parsed["installed"] if isinstance(row, dict)]
+        invalid_row_count = len(parsed["installed"]) - len(plugin_rows)
+```
+
+The Host must inspect `plugin_probe.diagnostics` and handle a timeout or error as
+partial evidence. `plugin_rows` is `None` when a raw list was not obtained; this
+does not mean there are no installed Plugins. A nonzero `invalid_row_count` is
+also partial evidence, even when valid rows remain. Pass those original valid
+rows to `resolve_plugin_store_inventory()` with the verified PluginStore root;
+retain and report its diagnostics or errors. Do not reconstruct rows from probe
+records or exclude installed Plugins only because they are disabled. Enabled
+state remains separate from presence and execution. Keep the raw payload in the
+Host, not in a public Receipt.
+
 ## Public fields and privacy
 
 Canonical IDs, names, kinds, status, descriptions, versions, provenance, conflicts,

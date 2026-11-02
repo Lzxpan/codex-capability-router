@@ -1,6 +1,7 @@
 """執行文件中的 Host API 範例；受控決策只驗證契約，不代表模型選用品質。"""
 
 from contextlib import ExitStack
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -121,6 +122,74 @@ class HostWorkflowExampleTests(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("installed Router version mismatch", result.stderr)
+
+    def test_documented_plugin_probe_preserves_valid_and_disabled_rows(self):
+        """單次查詢保留停用項目及有效原始列，壞列維持部分診斷。"""
+        from codex_capability_router.inventory import refresh_skill_inventory
+        from codex_capability_router.plugin_store import resolve_plugin_store_inventory
+
+        store = self.root / "plugins" / "cache"
+        rows = []
+        for name, enabled in (("active", True), ("disabled", False)):
+            package = store / "fixture" / name / "1.0.0"
+            manifest = package / ".codex-plugin" / "plugin.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps({"name": name, "skills": "./skills/"}), encoding="utf-8")
+            _write_skill(package / "skills" / ("probe-" + name), "probe-" + name)
+            rows.append({"pluginId": f"{name}@fixture", "name": name, "marketplaceName": "fixture",
+                         "version": "1.0.0", "installed": True, "enabled": enabled})
+        payload = {"installed": [*rows, None], "available": []}
+        discovery = (POLICY.parent / "discovery-and-provenance.md").read_text(encoding="utf-8")
+        match = re.search(r"<!-- host-workflow:plugin-probe -->\s*```python\s*\n(.*?)```", discovery, re.S)
+        self.assertIsNotNone(match)
+        namespace = {}
+        with patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), "")) as call:
+            exec(compile(match.group(1), "documented-plugin-probe", "exec"), namespace)
+        call.assert_called_once()
+        self.assertEqual(call.call_args.kwargs["timeout"], 90)
+        self.assertEqual(namespace["plugin_payload"], payload)
+        self.assertEqual(namespace["plugin_rows"], rows)
+        self.assertEqual(namespace["invalid_row_count"], 1)
+        self.assertTrue(namespace["plugin_probe"].partial)
+        self.assertIn("malformed_probe_entry", {d.code for d in namespace["plugin_probe"].diagnostics})
+        resolved = resolve_plugin_store_inventory(namespace["plugin_rows"], plugin_store_root=store)
+        self.assertEqual(resolved.resolved_count, 2)
+        inventory = refresh_skill_inventory((), plugin_manifests=resolved.manifests)
+        self.assertEqual({item.id for item in inventory.records}, {"probe-active", "probe-disabled"})
+
+    def test_documented_plugin_probe_failure_is_not_an_empty_list(self):
+        """Timeout、非零狀態及錯誤 JSON 均保留未知，而不是偽裝成空清單。"""
+        discovery = (POLICY.parent / "discovery-and-provenance.md").read_text(encoding="utf-8")
+        match = re.search(r"<!-- host-workflow:plugin-probe -->\s*```python\s*\n(.*?)```", discovery, re.S)
+        self.assertIsNotNone(match)
+        failures = (subprocess.TimeoutExpired("codex", 90),
+                    subprocess.CompletedProcess([], 1, "", ""),
+                    subprocess.CompletedProcess([], 0, "{", ""),
+                    subprocess.CompletedProcess([], 0, '{"installed": null}', ""))
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__, stdout=getattr(failure, "stdout", None)):
+                namespace = {}
+                with patch("subprocess.run", side_effect=failure if isinstance(failure, Exception) else None,
+                           return_value=failure):
+                    exec(compile(match.group(1), "documented-plugin-probe", "exec"), namespace)
+                self.assertTrue(namespace["plugin_probe"].partial)
+                self.assertIsNone(namespace["plugin_payload"])
+                self.assertIsNone(namespace["plugin_rows"])
+
+    def test_documented_plugin_probe_distinguishes_empty_and_invalid_rows(self):
+        """有效空清單與所有資料列無效必須保留不同證據。"""
+        discovery = (POLICY.parent / "discovery-and-provenance.md").read_text(encoding="utf-8")
+        match = re.search(r"<!-- host-workflow:plugin-probe -->\s*```python\s*\n(.*?)```", discovery, re.S)
+        self.assertIsNotNone(match)
+        for rows, invalid_count in (([], 0), ([None], 1)):
+            with self.subTest(rows=rows):
+                namespace = {}
+                response = subprocess.CompletedProcess([], 0, json.dumps({"installed": rows}), "")
+                with patch("subprocess.run", return_value=response):
+                    exec(compile(match.group(1), "documented-plugin-probe", "exec"), namespace)
+                self.assertEqual(namespace["plugin_rows"], [])
+                self.assertEqual(namespace["invalid_row_count"], invalid_count)
+                self.assertEqual(namespace["plugin_probe"].partial, bool(invalid_count))
 
     def test_path_strings_are_normalized_and_handoff_uses_public_fields(self):
         """2026-10-08 Steve Peng：Host 常見字串路徑與全文交接走文件中的實際 API。"""
