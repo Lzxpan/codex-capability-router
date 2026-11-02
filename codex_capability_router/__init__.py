@@ -68,7 +68,8 @@
 # 修改紀錄（2026-10-08，Steve Peng）：原版本 1.1.0；對齊 Host 指引與輸出修正版 1.1.1。
 # 修改紀錄（2026-10-12，Steve Peng）：原版本 1.1.1；對齊選用批次證據修正版 1.1.2。
 # 修改紀錄（2026-10-13，Steve Peng）：原版本 1.1.2；更新為 fixture 隔離修正版 1.1.3。
-__version__ = "1.1.3"
+# 修改紀錄（2026-11-02，Steve Peng）：原版本 1.1.3；修正載入與外掛技能發現，改為 1.1.4。
+__version__ = "1.1.4"
 
 from .registry import classify_capability, deduplicate_registry
 from .host_exposure import (

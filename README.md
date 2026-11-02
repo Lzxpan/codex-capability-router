@@ -6,11 +6,11 @@
 
 ![水獺 Router 引導兔子開發者，從眾多方法與工具中組合工作計畫，貓頭鷹負責檢查結果。](docs/assets/v1.0.0/hero.png)
 
-[![Version: 1.1.3](https://img.shields.io/badge/version-1.1.3-168C84)](CHANGELOG.md)
+[![Version: 1.1.4](https://img.shields.io/badge/version-1.1.4-168C84)](CHANGELOG.md)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-E6B13E)](LICENSE)
 
-**目前穩定版本：`v1.1.3`，發布日期：2026-10-13。** 以 Stable `v1.0.0`（`v0.2.0-beta.10`）為基線，隔離測試 fixture 與正式技能探索、保留所選項的批次證據，並區分結構化路由與相容呼叫；不加入 Skill Preference Memory。
+**目前穩定版本：`v1.1.4`，發布日期：2026-11-02。** 修正隔離載入與外掛技能目錄辨識，保留 `v1.1.3` 的路由契約；不加入 Skill Preference Memory。版本基線為 Stable `v1.0.0`（`v0.2.0-beta.10`）。
 
 你已經有很多 Skills 和工具，但每個任務都不一樣。修 firmware、整理 README、產生圖片、檢查測試，往往需要幾種能力一起合作。
 
@@ -22,13 +22,13 @@
 
 ### 安裝
 
-下列指令安裝 [Stable `v1.1.3`](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.1.3)。以下是全新安裝；目標資料夾已存在時，Git 會拒絕覆蓋，請先確認既有安裝。
+下列指令安裝 [Stable `v1.1.4`](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.1.4)。以下是全新安裝；目標資料夾已存在時，Git 會拒絕覆蓋，請先確認既有安裝。
 
 **Windows PowerShell**
 
 ```powershell
 $skillRoot = Join-Path $HOME ".agents/skills/codex-capability-router"
-git clone --branch v1.1.3 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
+git clone --branch v1.1.4 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
 if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 ```
 
@@ -36,7 +36,7 @@ if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 
 ```bash
 skill_root="${HOME}/.agents/skills/codex-capability-router"
-git clone --branch v1.1.3 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
+git clone --branch v1.1.4 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
 ```
 
 讓 Host 重新載入 Skill 清單，再在 prompt 中使用：
@@ -51,6 +51,12 @@ $codex-capability-router
 `FINALIZED` 代表選擇紀錄已定案；工作是否成功，要另外看 Host 的執行證據。
 
 安裝提供的是指令層整合。每個任務是否自動觸發 Router、能否取得完整 inventory、會不會實際套用 Skill，取決於 Host 接線；**不宣稱 automatic Host integration 已在所有環境成立**。整合端 API 與範例見[目前 contract](references/routing-policy.md)。
+
+## v1.1.4 修改
+
+- 更新隔離 Python 載入範例，檢查安裝版的實際路徑與版本。
+- 辨識 portable 與 Claude 外掛的標準 `skills/` 目錄及 Claude 的額外宣告路徑，保留套件內路徑限制。
+- Portable 外掛尚未進行完整 metadata schema 驗證；根目錄的 `mcp.json` 不會自動加入 Provider 候選。
 
 ## v1.1.3 累積修改（相對 v1.0.0）
 

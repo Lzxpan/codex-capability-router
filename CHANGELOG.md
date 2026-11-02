@@ -2,6 +2,14 @@
 
 All notable changes to `codex-capability-router` are documented here.
 
+## v1.1.4 - 2026-11-02
+
+- 修正隔離 Python 載入安裝版的操作範例，並檢查實際載入路徑。
+- 支援已安裝外掛的 portable 與 Claude 宣告檔及標準技能目錄，依格式處理額外路徑與來源標記，保留既有路徑限制及選用契約。
+- 補充載入、外掛來源與路徑邊界的回歸測試。
+
+已知限制：尚未完整驗證 portable metadata schema；根目錄的 `mcp.json` 不會自動加入 Provider 候選。
+
 ## v1.1.3 - 2026-10-13
 
 - GitHub 正式發布，包含 v1.1.0–v1.1.2 本機修正版的累積修改。

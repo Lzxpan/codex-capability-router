@@ -6,11 +6,11 @@
 
 ![An otter Router guides a rabbit developer through many methods and tools while an owl checks the results.](docs/assets/v1.0.0/hero.png)
 
-[![Version: 1.1.3](https://img.shields.io/badge/version-1.1.3-168C84)](CHANGELOG.md)
+[![Version: 1.1.4](https://img.shields.io/badge/version-1.1.4-168C84)](CHANGELOG.md)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-E6B13E)](LICENSE)
 
-**Current stable version: `v1.1.3`, released 2026-10-13.** Based on Stable `v1.0.0` (`v0.2.0-beta.10`), this revision isolates test fixtures from production discovery, preserves batch evidence for selected items, and distinguishes structured routing from legacy compatibility. It does not add Skill Preference Memory.
+**Current stable version: `v1.1.4`, released 2026-11-02.** This revision fixes isolated loading and Plugin Skill discovery while retaining the `v1.1.3` routing contract. It does not add Skill Preference Memory. The baseline is Stable `v1.0.0` (`v0.2.0-beta.10`).
 
 You already have plenty of Skills and tools. But debugging firmware, explaining a project, creating images, and checking a release often need several capabilities working together.
 
@@ -22,13 +22,13 @@ You need **Git, Python 3.11+**, and a Codex/Host that can read Skills. There are
 
 ### Install
 
-The commands below install [Stable `v1.1.3`](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.1.3). These commands are for a fresh installation. Git refuses to overwrite an existing target; inspect that installation before updating it.
+The commands below install [Stable `v1.1.4`](https://github.com/Lzxpan/codex-capability-router/releases/tag/v1.1.4). These commands are for a fresh installation. Git refuses to overwrite an existing target; inspect that installation before updating it.
 
 **Windows PowerShell**
 
 ```powershell
 $skillRoot = Join-Path $HOME ".agents/skills/codex-capability-router"
-git clone --branch v1.1.3 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
+git clone --branch v1.1.4 --depth 1 https://github.com/Lzxpan/codex-capability-router.git $skillRoot
 if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 ```
 
@@ -36,7 +36,7 @@ if ($LASTEXITCODE -ne 0) { throw "Installation failed" }
 
 ```bash
 skill_root="${HOME}/.agents/skills/codex-capability-router"
-git clone --branch v1.1.3 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
+git clone --branch v1.1.4 --depth 1 https://github.com/Lzxpan/codex-capability-router.git "$skill_root"
 ```
 
 Reload the Host's Skill list, then use it in a prompt:
@@ -52,6 +52,12 @@ and verify that the documentation matches the code.
 `FINALIZED` means the selection record is frozen. Look separately at Host execution evidence to learn whether the work succeeded.
 
 Installation supplies instruction-level integration. Automatic triggering, complete inventory, and actual Skill application depend on Host wiring; **automatic Host integration is not established in every environment**. Integrator APIs and examples are in the [current contract](references/routing-policy.md).
+
+## Changes in v1.1.4
+
+- Update the isolated Python loading example to check the installed path and version.
+- Discover standard `skills/` directories in portable and Claude Plugins, plus Claude's additional declared paths, while keeping paths inside the package.
+- Portable Plugin metadata is not fully schema-validated; root `mcp.json` is not automatically added to Provider candidates.
 
 ## Cumulative changes in v1.1.3 since v1.0.0
 

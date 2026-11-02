@@ -1,4 +1,4 @@
-"""Standard-library static checks for the 1.1.3 source candidate and historical assets."""
+"""Standard-library static checks for the 1.1.4 source candidate and historical assets."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ RELEASE_FILES = (*README_FILES, *ASSETS, "pyproject.toml", "SKILL.md",
     "references/i18n-policy.md", "tests/test_v11_host_workflow.py", "tests/test_v11_rendering.py", "tests/test_v112_decision_evidence.py",
     "tests/test_fixture_isolation.py", "tests/fixtures/legacy_frontmatter/explain-code/SKILL.fixture.md")
 CORE_FACTS = (
-    "v1.1.3", "2026-10-13", "v1.0.0", "v0.2.0-beta.10", "TaskAnalysis", "digest batches",
+    "v1.1.4", "2026-11-02", "v1.0.0", "v0.2.0-beta.10", "TaskAnalysis", "digest batches",
     "Host Skill decisions", "Execution Needs", "Provider decisions", "route()",
     "FINALIZED", "ExecutionAttempt", "COMPLETE", "PARTIAL", "needs_detail",
     "SPARSE", "OPAQUE", "app", "mcp", "builtin_tool", "host_tool",
@@ -51,22 +51,21 @@ def check_versions() -> None:
     metadata = tomllib.loads(text("pyproject.toml"))
     # 2026-10-07 Steve Peng：原檢查固定為 1.0.0；改核對 1.1.0 原始碼，安裝指令仍使用已發布基線。
     # 2026-10-12 Steve Peng：版本檢查由 1.1.1 對齊修正版 1.1.2，保留歷史安裝基線。
-    assert metadata["project"]["version"] == "1.1.3", "package version"
+    assert metadata["project"]["version"] == "1.1.4", "package version"
     assert metadata["project"]["dependencies"] == [], "runtime dependencies changed"
     assignments = ast.parse(text("codex_capability_router/__init__.py")).body
     version = next(ast.literal_eval(node.value) for node in assignments
                    if isinstance(node, ast.Assign)
                    and any(isinstance(t, ast.Name) and t.id == "__version__" for t in node.targets))
-    assert version == "1.1.3", "import version"
-    assert "Contract (1.1.3)" in text("SKILL.md"), "Skill contract version"
-    # 修改紀錄（2026-10-13，Steve Peng）：原檢查要求 Unreleased 與 v1.0.0 安裝指令。
-    # 為發布既有 v1.1.3，改核對發布日期與該版本連結／安裝指令；不修改 runtime 或入口內容。
+    assert version == "1.1.4", "import version"
+    assert "Contract (1.1.4)" in text("SKILL.md"), "Skill contract version"
+    # 修改紀錄（2026-11-02，Steve Peng）：原檢查為 v1.1.3，改核對 v1.1.4 的發布資訊及安裝指令。
     for path in README_FILES:
         header = text(path).split("\n\n", 8)[:8]
         joined = "\n".join(header)
-        assert "v1.1.3" in joined and "2026-10-13" in joined, path
-        assert "releases/tag/v1.1.3" in text(path), path
-        assert "--branch v1.1.3" in text(path), path
+        assert "v1.1.4" in joined and "2026-11-02" in joined, path
+        assert "releases/tag/v1.1.4" in text(path), path
+        assert "--branch v1.1.4" in text(path), path
 
 
 def check_readmes() -> None:
@@ -140,7 +139,7 @@ def main() -> None:
     check_readmes()
     check_assets()
     count = check_public_files()
-    print(json.dumps({"version": "1.1.3", "version_parity": "PASS", "readme_links": "PASS",
+    print(json.dumps({"version": "1.1.4", "version_parity": "PASS", "readme_links": "PASS",
         "readme_assets": "PASS", "svg_xml": "PASS", "utf8_privacy_static": "PASS",
         "text_files_checked": count, "visual_qa": "SEPARATE_OBSERVATION_REQUIRED"}))
 

@@ -3,6 +3,8 @@
 from contextlib import ExitStack
 from pathlib import Path
 import re
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -31,7 +33,7 @@ class HostWorkflowExampleTests(unittest.TestCase):
             r"<!-- host-workflow:(\w+) -->\s*```python\n(.*?)```",
             POLICY.read_text(encoding="utf-8").replace("\r\n", "\n"), re.S,
         ))
-        self.assertEqual(set(self.blocks), {"prepare", "handoff", "supporting", "finalize"})
+        self.assertEqual(set(self.blocks), {"bootstrap", "prepare", "handoff", "supporting", "finalize"})
         self.analysis = {
             "task_summary": "Inspect firmware and record verification limits",
             "work_items": ["Inspect the UART contract"],
@@ -41,6 +43,7 @@ class HostWorkflowExampleTests(unittest.TestCase):
         }
         self.namespace = {
             "task_analysis": self.analysis,
+            "selected_skill_file": POLICY.parent.parent / "SKILL.md",
             "host_home": self.home, "host_codex_home": self.codex_home,
             "runtime_extra_roots": (), "plugin_manifests": (),
             "host_registry": (), "host_snapshot_id": "workflow-test",
@@ -52,6 +55,7 @@ class HostWorkflowExampleTests(unittest.TestCase):
         exec(compile(self.blocks[name], f"routing-policy:{name}", "exec"), self.namespace)
 
     def prepare_decisions(self, *, needs=()):
+        self.run_block("bootstrap")
         self.run_block("prepare")
         context = self.namespace["skill_context"]
         self.assertEqual({p.id for p in context.candidates}, set(self.ids))
@@ -72,6 +76,51 @@ class HostWorkflowExampleTests(unittest.TestCase):
             "execution_needs": list(needs),
         }
         self.namespace["host_final_decision"] = self.namespace["host_decision"]
+
+    def test_documented_bootstrap_loads_selected_skill_from_neutral_directory(self):
+        """在隔離 Python 中執行文件原文，不能依賴工作目錄或 PYTHONPATH。"""
+        skill_file = POLICY.parent.parent / "SKILL.md"
+        code = f"selected_skill_file = {str(skill_file)!r}\n" + self.blocks["bootstrap"]
+        result = subprocess.run(
+            [sys.executable, "-X", "utf8", "-B", "-I", "-c", code],
+            cwd=self.root, capture_output=True, text=True, encoding="utf-8", timeout=20,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_documented_bootstrap_rejects_preloaded_other_runtime(self):
+        """同名套件已從其他來源載入時，不得錯認為所選安裝版。"""
+        skill_file = POLICY.parent.parent / "SKILL.md"
+        code = (
+            "import sys, types\n"
+            "other = types.ModuleType('codex_capability_router')\n"
+            f"other.__file__ = {str(self.root / 'other' / '__init__.py')!r}\n"
+            "sys.modules['codex_capability_router'] = other\n"
+            f"selected_skill_file = {str(skill_file)!r}\n"
+        ) + self.blocks["bootstrap"]
+        result = subprocess.run(
+            [sys.executable, "-X", "utf8", "-B", "-I", "-c", code],
+            cwd=self.root, capture_output=True, text=True, encoding="utf-8", timeout=20,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("installed Router path mismatch", result.stderr)
+
+    def test_documented_bootstrap_rejects_wrong_version(self):
+        """即使來源路徑正確，也不能把錯誤版本當成所選契約。"""
+        skill_file = POLICY.parent.parent / "SKILL.md"
+        code = (
+            "import sys, types\n"
+            "other = types.ModuleType('codex_capability_router')\n"
+            f"other.__file__ = {str(skill_file.parent / 'codex_capability_router' / '__init__.py')!r}\n"
+            "other.__version__ = '0.0.0'\n"
+            "sys.modules['codex_capability_router'] = other\n"
+            f"selected_skill_file = {str(skill_file)!r}\n"
+        ) + self.blocks["bootstrap"]
+        result = subprocess.run(
+            [sys.executable, "-X", "utf8", "-B", "-I", "-c", code],
+            cwd=self.root, capture_output=True, text=True, encoding="utf-8", timeout=20,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("installed Router version mismatch", result.stderr)
 
     def test_path_strings_are_normalized_and_handoff_uses_public_fields(self):
         """2026-10-08 Steve Peng：Host 常見字串路徑與全文交接走文件中的實際 API。"""

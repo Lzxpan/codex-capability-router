@@ -1,6 +1,6 @@
 # Routing Policy
 
-## v1.1.3 normative contract
+## v1.1.4 normative contract
 
 This section and the current SKILL.md govern production `route()`. The historical
 compatibility section below does not constrain current selection or rendering.
@@ -101,7 +101,7 @@ are required for this protocol.
 
 ## Host API workflow
 
-Run all four Python blocks in the same Host process. The examples reuse the
+Run all five Python blocks in the same Host process. The examples reuse the
 existing public APIs and one typed inventory snapshot. `to_mapping()` is a public
 projection, not a saved context that can be loaded for finalization.
 The inventory snapshot is a typed container; use
@@ -112,6 +112,7 @@ The Host supplies these inputs from the current task and session:
 | Input | Source |
 | --- | --- |
 | `task_analysis` | Task summary, work items, deliverables, constraints and quality expectations |
+| `selected_skill_file` | Absolute path of the selected Router `SKILL.md` supplied by the Host |
 | `host_home`, `host_codex_home` | The Host's actual user home and Codex home directories |
 | `runtime_extra_roots`, `plugin_manifests` | Trusted roots and active Plugin declarations actually exposed by the Host; empty tuples when none are supplied |
 | `host_preliminary_skill_ids` | Model judgments using the discovered candidate IDs |
@@ -156,6 +157,30 @@ is unavailable. Try the documented library entry; if it fails, report the actual
 import/API error and stopping point. Only `route()` can create a formal Receipt.
 Do not substitute a development checkout after an installed-runtime failure.
 Import success proves loadability only; it does not create a routing Receipt.
+
+### Load the selected installed runtime
+
+Start Python from a neutral directory with `python -X utf8 -B -I`, then execute
+this block in the same process as the remaining blocks. Use the actual selected
+Skill path; `-I` ignores `PYTHONPATH` and does not add the Skill root for you.
+
+<!-- host-workflow:bootstrap -->
+```python
+from pathlib import Path
+import sys
+
+skill_root = Path(selected_skill_file).resolve().parent
+sys.path.insert(0, str(skill_root))
+import codex_capability_router as router
+if Path(router.__file__).resolve().parent.parent != skill_root:
+    raise ImportError("installed Router path mismatch")
+runtime_version = router.__version__
+if runtime_version != "1.1.4":
+    raise ImportError("installed Router version mismatch")
+```
+
+Import failure or a mismatched path stops routing; do not use a development
+checkout in its place. Import success alone is not a Receipt.
 
 ### Prepare the actual candidates
 

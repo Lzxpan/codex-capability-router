@@ -1,8 +1,8 @@
 """Known Plugin entity 到官方 physical package root 的 bounded resolver。
 
 本模組只接受 caller 已取得的 logical Plugin inventory；它不從 cache 反向
-發現 Plugin，也不遞迴搜尋任何 package。成功解析後只讀取 exact
-``.codex-plugin/plugin.json``，再把 manifest 交給既有 declared-child adapters。
+發現 Plugin，也不遞迴搜尋任何 package。成功解析後只讀取已知位置的
+manifest，再把內容交給既有 declared-child adapters。
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ import re
 
 PLUGIN_STORE_RELATIVE_ROOT = Path("plugins") / "cache"
 PLUGIN_MANIFEST_RELATIVE_PATH = Path(".codex-plugin") / "plugin.json"
+PORTABLE_PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 PLUGIN_ROOT_RESOLUTION_STATES = frozenset(
     {"CLI_EXACT_PATH", "VERSION_DIRECT_ROOT", "ACTIVE_ROOT_FALLBACK", "UNRESOLVED"}
 )
@@ -364,7 +365,17 @@ def _load_manifest(
             status="MISSING",
         )
     counters["plugin_physical_roots_visited"] += 1
-    manifest_path = package_root / PLUGIN_MANIFEST_RELATIVE_PATH
+    # 修改紀錄（2026-11-02，Steve Peng）：原先只讀 Codex 格式；已安裝外掛
+    # 亦可能使用 portable 或 Claude manifest。只在同一可信 package 根目錄
+    # 檢查固定位置；portable 根宣告存在時以它為準，不擴大 cache 掃描範圍。
+    codex_manifest = package_root / PLUGIN_MANIFEST_RELATIVE_PATH
+    portable_manifest = package_root / "plugin.json"
+    claude_manifest = package_root / ".claude-plugin" / "plugin.json"
+    # ponytail: 只檢查已確認的三種位置；出現新格式且有來源證據時再擴充。
+    manifest_path = next(
+        (path for path in (portable_manifest, codex_manifest, claude_manifest) if path.is_file()),
+        codex_manifest,
+    )
     if not manifest_path.is_file():
         diagnostics.append(f"plugin_manifest_missing:{identity.raw_plugin_id}")
         return PluginRootResolution(
@@ -375,10 +386,39 @@ def _load_manifest(
             manifest_path=manifest_path,
             status="MANIFEST_MISSING",
         )
+    failure = None
+    payload = None
     try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        diagnostics.append(f"plugin_manifest_unreadable:{identity.raw_plugin_id}")
+        if manifest_path != codex_manifest and not manifest_path.resolve().is_relative_to(package_root.resolve()):
+            failure = "plugin_manifest_unsafe_path"
+        else:
+            content = manifest_path.read_text(encoding="utf-8")
+            counters["plugin_manifests_opened"] += 1
+            payload = json.loads(content)
+            if manifest_path == portable_manifest and codex_manifest.is_file() and isinstance(payload, Mapping):
+                schema = payload.get("$schema")
+                nonportable = "$schema" not in payload or (
+                    isinstance(schema, str) and bool(schema) and not schema.startswith("https://agent-plugins.org/")
+                )
+                if nonportable:
+                    manifest_path = codex_manifest
+                    if not manifest_path.resolve().is_relative_to(package_root.resolve()):
+                        failure = "plugin_manifest_unsafe_path"
+                    else:
+                        content = manifest_path.read_text(encoding="utf-8")
+                        counters["plugin_manifests_opened"] += 1
+                        payload = json.loads(content)
+    except (OSError, UnicodeError, ValueError):
+        failure = "plugin_manifest_unreadable"
+    if failure is None:
+        if not isinstance(payload, Mapping):
+            failure = "plugin_manifest_unreadable"
+        elif manifest_path != codex_manifest and payload.get("name") != identity.plugin_name:
+            failure = "plugin_manifest_identity_mismatch"
+        elif manifest_path == portable_manifest and payload.get("$schema") != PORTABLE_PLUGIN_SCHEMA:
+            failure = "plugin_manifest_schema_unsupported"
+    if failure is not None:
+        diagnostics.append(f"{failure}:{identity.raw_plugin_id}")
         return PluginRootResolution(
             identity.raw_plugin_id,
             identity,
@@ -387,18 +427,47 @@ def _load_manifest(
             manifest_path=manifest_path,
             status="MANIFEST_UNREADABLE",
         )
-    if not isinstance(payload, Mapping):
-        diagnostics.append(f"plugin_manifest_unreadable:{identity.raw_plugin_id}")
-        return PluginRootResolution(
-            identity.raw_plugin_id,
-            identity,
-            resolution,
-            package_root=package_root,
-            manifest_path=manifest_path,
-            status="MANIFEST_UNREADABLE",
-        )
-    counters["plugin_manifests_opened"] += 1
+    assert isinstance(payload, Mapping)
     normalized = dict(payload)
+    # 修改紀錄（2026-11-02，Steve Peng）：原先只在 portable 未宣告 skills 時
+    # 掃描預設目錄，且 Claude 只掃宣告目錄，可能漏掉標準 skills/。
+    # Portable 忽略未知欄位；Claude 額外路徑與預設目錄並存，皆保留路徑限制。
+    if manifest_path == portable_manifest:
+        allowed = {"$schema", "name", "version", "description", "author", "homepage",
+                   "repository", "license", "keywords", "extensions"}
+        if normalized.keys() - allowed:
+            diagnostics.append(f"plugin_manifest_unknown_field:{identity.raw_plugin_id}")
+        normalized = {key: value for key, value in normalized.items() if key in allowed}
+        extensions = normalized.get("extensions")
+        openai = extensions.get("com.openai") if isinstance(extensions, Mapping) else None
+        if isinstance(openai, Mapping):
+            if "apps" in openai:
+                normalized["apps"] = openai["apps"]
+        elif codex_manifest.is_file():
+            try:
+                if not codex_manifest.resolve().is_relative_to(package_root.resolve()):
+                    raise ValueError("overlay outside package")
+                content = codex_manifest.read_text(encoding="utf-8")
+                counters["plugin_manifests_opened"] += 1
+                overlay = json.loads(content)
+                if not isinstance(overlay, Mapping):
+                    raise ValueError("invalid overlay")
+                for field in ("apps", "mcp", "mcp_servers", "mcpServers"):
+                    if field in overlay:
+                        normalized[field] = overlay[field]
+            except (OSError, UnicodeError, ValueError):
+                diagnostics.append(f"plugin_overlay_unreadable:{identity.raw_plugin_id}")
+        if (package_root / "skills").is_dir():
+            normalized["skills"] = "./skills/"
+            normalized["plugin_skill_root_origin"] = "portable_layout"
+    else:
+        normalized.pop("plugin_skill_root_origin", None)
+        if manifest_path == claude_manifest:
+            for field in ("skill_roots", "skill_paths", "capabilities", "children"):
+                normalized.pop(field, None)
+            if (package_root / "skills").is_dir():
+                normalized["skill_roots"] = ["./skills/"]
+                normalized["plugin_skill_root_origin"] = "claude_layout"
     normalized.update(
         {
             "plugin_id": identity.raw_plugin_id,

@@ -528,10 +528,16 @@ def discover_plugin_skill_root_specs(
                 mode = TRAVERSAL_PLUGIN_CONTAINER
             else:
                 continue
+            origin = manifest.get("plugin_skill_root_origin")
+            default_path = (package_root / "skills").resolve()
+            if path == default_path and origin in ("portable_layout", "claude_layout"):
+                source_kind = f"PLUGIN_{origin.upper()}_SKILL:{plugin_id}"
+            else:
+                source_kind = f"PLUGIN_MANIFEST_DECLARED_SKILL:{plugin_id}"
             specs.append(
                 SkillRootSpec(
                     skill_root,
-                    f"PLUGIN_MANIFEST_DECLARED_SKILL:{plugin_id}",
+                    source_kind,
                     ROOT_KIND_PLUGIN_DECLARED,
                     traversal_mode=mode,
                     scope="plugin",

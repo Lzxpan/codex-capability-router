@@ -1,6 +1,6 @@
 # Discovery, provenance, and registry fields
 
-Current contract: `v1.1.3`. Historical release scope lives in CHANGELOG.md
+Current contract: `v1.1.4`. Historical release scope lives in CHANGELOG.md
 and explicitly marked historical documents, not in current selection gates.
 
 ## Trusted roots and bounded traversal
@@ -10,6 +10,17 @@ The controller builds a `RootPlanSnapshot` from fixed global roots
 `.system` child, known project roots, explicit runtime roots, and resolved
 active Plugin manifest paths. The scanner reads a direct Skill or immediate
 children; it never recursively walks unknown subtrees or a PluginStore ancestor.
+
+For each resolved installed Plugin, manifest lookup checks the portable root,
+then the Codex or Claude location. An unrelated root format does not displace
+an existing Codex manifest; unsupported Agent Plugins schemas are rejected.
+Portable and Claude manifests must match the Plugin identity; portable manifests
+require the supported schema. A portable OpenAI extension replaces the Codex
+overlay; otherwise the overlay can supply supported App and MCP declarations.
+Portable Plugins use the standard `skills/` directory; unknown manifest fields
+are reported and ignored. Claude Plugins use the standard `skills/` directory
+alongside paths declared by `skills`. Layout roots are labeled separately from
+declared paths and remain contained by the resolved Plugin root.
 
 Test Skill documents are stored as `SKILL.fixture.md`, not discoverable entrypoints.
 Compatibility tests materialize `SKILL.md` only in temporary directories outside
